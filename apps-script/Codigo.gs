@@ -37,7 +37,7 @@ function onOpen() {
 
 // Versión de los disparadores: al cambiar horarios en el código, subir este número. El disparador de precios
 // (que corre cada 15 minutos) detecta la versión nueva y reinstala todo solo, sin pasar por el menú.
-const VERSION_DISPARADORES = 2;
+const VERSION_DISPARADORES = 3;
 
 function instalar() {
   crearDisparadores_();
@@ -60,7 +60,13 @@ function sincronizarDisparadores_() {
   if (+P.getProperty('VERSION_DISPARADORES') === VERSION_DISPARADORES) return;
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) return;
-  try { if (+P.getProperty('VERSION_DISPARADORES') !== VERSION_DISPARADORES) crearDisparadores_(); }
+  try {
+    if (+P.getProperty('VERSION_DISPARADORES') !== VERSION_DISPARADORES) {
+      crearDisparadores_();
+      // Con la versión nueva publicada, regenera en el momento el informe que esté en su franja horaria.
+      ['premarket', 'postmarket'].forEach(t => { if (enVentana_(t)) generarInforme_(t, false); });
+    }
+  }
   catch (e) { console.warn('No se pudieron actualizar los disparadores: ' + e.message); }
   finally { lock.releaseLock(); }
 }
@@ -228,6 +234,8 @@ const ADRS = ['GGAL', 'YPF', 'PAM', 'BMA', 'SUPV', 'TGS', 'CEPU', 'IRS', 'LOMA',
 // Diarios y portales: [fuente, url, sección]. Una fuente caída no frena el informe.
 const RSS = [
   ['Ámbito', 'https://www.ambito.com/rss/pages/finanzas.xml', 'argentina'],
+  ['Ámbito', 'https://www.ambito.com/rss/pages/economia.xml', 'argentina'],
+  ['Ámbito', 'https://www.ambito.com/rss/pages/negocios.xml', 'argentina'],
   ['Infobae', 'https://www.infobae.com/arc/outboundfeeds/rss/category/economia/', 'argentina'],
   ['El Cronista', 'https://www.cronista.com/arc/outboundfeeds/rss/?outputType=xml', 'argentina'],
   ['La Nación', 'https://www.lanacion.com.ar/arc/outboundfeeds/rss/category/economia/?outputType=xml', 'argentina'],
@@ -239,7 +247,9 @@ const PALABRAS = ['merval', 'riesgo país', 'riesgo pais', 'bonos', 'dólar', 'd
   'adr', 'inflación', 'licitación', 'tesoro', 'cedear', 'tasas', 'caución', 'mercados', 'byma', 'cnv', 'fmi', 'deuda',
   'stocks', 'treasury', 'yields', 's&p', 'nasdaq', 'dow ', 'inflation', 'earnings', 'oil', 'dollar', 'rates', 'powell', 'tariff', 'jobs report', 'argentina'];
 // Cuentas de X que se siguen si no se configura la propiedad X_CUENTAS (ver README).
-const X_CUENTAS = ['BCRAoficial', 'LuisCaputoAR', 'Ambitocom', 'cronistacom', 'infobae', 'WSJmarkets', 'federalreserve', 'DeItaone'];
+const X_CUENTAS = ['FinanzasArgy', 'BCRAoficial', 'LuisCaputoAR', 'Ambitocom', 'cronistacom', 'infobae', 'WSJmarkets', 'federalreserve', 'DeItaone'];
+// Canales públicos de Telegram que se leen sin clave (vista web t.me/s/...). Se cambian con la propiedad TELEGRAM_CANALES.
+const TELEGRAM_CANALES = ['finanzasargy'];
 const IA_MODELO = 'claude-opus-5-5';
 const EMPRESAS = { GGAL: 'galicia', YPFD: 'ypf', PAMP: 'pampa', BMA: 'macro', SUPV: 'supervielle', TGSU2: 'transportadora de gas del sur',
   TGNO4: 'gas del norte', METR: 'metrogas', ECOG: 'ecogas', LOMA: 'loma negra', IRSA: 'irsa', ALUA: 'aluar', TXAR: 'ternium', BBAR: 'bbva',
@@ -479,6 +489,39 @@ function posteosX_(claves) {
   } catch (e) { return []; }
 }
 
+// Últimos mensajes de canales públicos de Telegram (vista web, sin clave).
+function telegram_(horas) {
+  const P = PropertiesService.getScriptProperties();
+  const canales = (P.getProperty('TELEGRAM_CANALES') || TELEGRAM_CANALES.join(',')).split(',').map(c => c.trim().replace(/^@/, '')).filter(Boolean).slice(0, 6);
+  const desde = Date.now() - horas * 3600000, out = [];
+  let resp = [];
+  try { resp = UrlFetchApp.fetchAll(canales.map(c => ({ url: 'https://t.me/s/' + encodeURIComponent(c), muteHttpExceptions: true, followRedirects: false, headers: { 'User-Agent': 'Mozilla/5.0' } }))); } catch (e) { resp = []; }
+  canales.forEach((c, i) => {
+    try {
+      const r = resp[i];
+      if (!r || r.getResponseCode() !== 200) return;
+      const html = r.getContentText();
+      const nombre = plano_((html.match(/<meta property="og:title" content="([^"]*)"/) || [])[1] || c);
+      html.split('tgme_widget_message_wrap').slice(1).forEach(b => {
+        const post = (b.match(/data-post="([\w]+\/\d+)"/) || [])[1];
+        const txt = (b.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/) || [])[1];
+        const fecha = Date.parse((b.match(/<time[^>]*datetime="([^"]+)"/) || [])[1] || '');
+        if (!post || !txt || !(fecha >= desde)) return;
+        const imagen = (b.match(/tgme_widget_message_photo_wrap[^>]*background-image:url\('([^']+)'\)/) || [])[1] || '';
+        out.push({ texto: corto_(plano_(txt.replace(/<br\s*\/?>/gi, '\n')), 400), autor: nombre, usuario: c, avatar: '', fecha, likes: null, rts: null,
+          imagen: /^https:\/\//.test(imagen) ? imagen : '', link: 'https://t.me/' + post, red: 'Telegram' });
+      });
+    } catch (e) { /* un canal caído no frena el informe */ }
+  });
+  return out.sort((a, b) => b.fecha - a.fecha).slice(0, 6);
+}
+// Redes: X (si hay token) + Telegram. Devuelve null solo si no hay nada configurado ni publicado.
+function redes_(claves, horas) {
+  const x = posteosX_(claves), tg = telegram_(horas);
+  if (x == null && !tg.length) return null;
+  return (x || []).map(p => Object.assign({ red: 'X' }, p)).concat(tg).slice(0, 12);
+}
+
 // Titular, bajada, claves y lectura del día redactados por Claude a partir de los datos del informe.
 // Opcional: requiere la propiedad del script ANTHROPIC_API_KEY. Ante cualquier error devuelve null
 // y la página arma la portada con reglas fijas.
@@ -636,7 +679,7 @@ function fuentes_(inf) {
   const f = ['BYMA vía Rava Bursátil', 'TradingView', 'DolarApi', 'ArgentinaDatos'];
   const medios = [...new Set(((inf && inf.noticias) || []).map(n => n.fuente))];
   f.push(...(medios.length ? medios : ['Ámbito', 'Infobae', 'El Cronista']));
-  if (inf && inf.x && inf.x.length) f.push('X (ex Twitter)');
+  [...new Set(((inf && inf.x) || []).map(p => p.red === 'Telegram' ? 'Telegram (' + p.autor + ')' : 'X'))].forEach(r => f.push(r));
   if (inf && inf.editorial && inf.editorial.ia) f.push('Portada redactada con Claude (Anthropic) sobre los datos del informe');
   f.push('Resumen de Posiciones Nasini');
   return f;
@@ -662,7 +705,7 @@ function armarPremarket_(ss) {
     argentina: { merval: rava.merval, riesgo: riesgoPais_(), dolares: dolares_(), mep: cfg_(ss).getRange(CFG.mepUsado).getValue() },
     calendario: calendario_(ss, hoyK_(), hoyK_()),
     agenda: { cheques: chequesEntre_(ss, hoyK_(), hoyK_()), balances: balances_(us, 7) },
-    noticias: noticias_(20, 16, claves), x: posteosX_(claves), serie: serie_(historial_(ss)),
+    noticias: noticias_(20, 16, claves), x: redes_(claves, 20), serie: serie_(historial_(ss)),
   };
 }
 
@@ -699,7 +742,7 @@ function armarPostmarket_(ss) {
     serie: serie_(hist, { fecha: hoyK_(), riesgo: rp ? rp.valor : null, merval: rava.merval ? rava.merval.valor : null, mep: mepHoy }),
     calendario: calendario_(ss, proximoHabil_(), proximoHabil_()), calendarioDia: proximoHabil_(),
     agenda: { cheques: chequesEntre_(ss, hoyK_(1), hoyK_(4)), balances: balances_(us, 7) },
-    noticias: noticias_(12, 16, claves), x: posteosX_(claves),
+    noticias: noticias_(12, 16, claves), x: redes_(claves, 12),
   };
 }
 

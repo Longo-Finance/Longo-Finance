@@ -43,6 +43,8 @@ del Tesoro, datos del INDEC o reuniones del BCRA.
 Dos agregados opcionales, que se activan en Apps Script → ⚙ Configuración del proyecto → **Propiedades de la secuencia de comandos**:
 - `ANTHROPIC_API_KEY`: la portada la redacta Claude a partir de los datos y titulares del informe (sin datos de clientes).
   Sin la clave, la portada se arma con reglas fijas.
+- `TELEGRAM_CANALES`: canales públicos de Telegram que se leen sin clave para "Lo que se dice en redes"
+  (por defecto `finanzasargy`; lista separada por comas).
 - `X_BEARER_TOKEN`: suma la sección "Lo que se dice en X" con los posteos más relevantes de las cuentas seguidas
   (requiere acceso a la API de X, que es pago). Las cuentas se cambian con la propiedad `X_CUENTAS`
   (lista separada por comas, por ejemplo `BCRAoficial,LuisCaputoAR,WSJmarkets`).
