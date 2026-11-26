@@ -35,16 +35,34 @@ function onOpen() {
     .addToUi();
 }
 
+// Versión de los disparadores: al cambiar horarios en el código, subir este número. El disparador de precios
+// (que corre cada 15 minutos) detecta la versión nueva y reinstala todo solo, sin pasar por el menú.
+const VERSION_DISPARADORES = 2;
+
 function instalar() {
+  crearDisparadores_();
+  const r = [actualizarPrecios_(true), revisarAlertas_(), generarInforme_('premarket', true), generarInforme_('postmarket', true), generarInforme_('semanal', true)];
+  SpreadsheetApp.getUi().alert('Automatizaciones instaladas:\n· Precios cada 15 minutos en horario de mercado\n· Alertas de cheques 9:00 h\n· Informe premarket cada 30 min de 8:00 a 11:30 h y postmarket cada 30 min de 18:00 a 20:00 h (lunes a viernes)\n· Informe semanal los lunes 8:00 h\n\n' + r.join('\n'));
+}
+function crearDisparadores_() {
   ScriptApp.getProjectTriggers().forEach(t => { if (HANDLERS.includes(t.getHandlerFunction())) ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('actualizarPrecios').timeBased().everyMinutes(15).create();
   ScriptApp.newTrigger('revisarAlertas').timeBased().atHour(9).nearMinute(0).everyDays(1).inTimezone(TZ).create();
   ScriptApp.newTrigger('generarPremarket').timeBased().everyMinutes(30).create();    // solo actúa de 8:00 a 11:30
   ScriptApp.newTrigger('generarPostmarket').timeBased().everyMinutes(30).create();   // solo actúa de 18:00 a 20:00
-  hoja_(SpreadsheetApp.getActive(), 'Agenda', ['Fecha', 'Hora', 'Evento', 'Importancia (Alta/Media)']);   // eventos locales del calendario
   ScriptApp.newTrigger('generarSemanal').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).nearMinute(0).inTimezone(TZ).create();
-  const r = [actualizarPrecios_(true), revisarAlertas_(), generarInforme_('premarket', true), generarInforme_('postmarket', true), generarInforme_('semanal', true)];
-  SpreadsheetApp.getUi().alert('Automatizaciones instaladas:\n· Precios cada 15 minutos en horario de mercado\n· Alertas de cheques 9:00 h\n· Informe premarket cada 30 min de 8:00 a 11:30 h y postmarket cada 30 min de 18:00 a 20:00 h (lunes a viernes)\n· Informe semanal los lunes 8:00 h\n\n' + r.join('\n'));
+  hoja_(SpreadsheetApp.getActive(), 'Agenda', ['Fecha', 'Hora', 'Evento', 'Importancia (Alta/Media)']);   // eventos locales del calendario
+  PropertiesService.getScriptProperties().setProperty('VERSION_DISPARADORES', String(VERSION_DISPARADORES));
+}
+// La llama el disparador de precios: si el código trae disparadores nuevos, los reinstala.
+function sincronizarDisparadores_() {
+  const P = PropertiesService.getScriptProperties();
+  if (+P.getProperty('VERSION_DISPARADORES') === VERSION_DISPARADORES) return;
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return;
+  try { if (+P.getProperty('VERSION_DISPARADORES') !== VERSION_DISPARADORES) crearDisparadores_(); }
+  catch (e) { console.warn('No se pudieron actualizar los disparadores: ' + e.message); }
+  finally { lock.releaseLock(); }
 }
 
 function actualizarPreciosAhora() { SpreadsheetApp.getUi().alert(actualizarPrecios_(true)); }
@@ -57,7 +75,7 @@ function cfg_(ss) { return ss.getSheetByName('Config'); }
 function estado_(ss, msg) { cfg_(ss).getRange(CFG.estado).setValue(Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' · ' + msg); }
 
 // ================================================================ precios
-function actualizarPrecios() { actualizarPrecios_(false); }   // la llama el disparador
+function actualizarPrecios() { sincronizarDisparadores_(); actualizarPrecios_(false); }   // la llama el disparador
 
 function enHorario_() {
   const now = new Date();

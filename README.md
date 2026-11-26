@@ -34,8 +34,7 @@ gráficos de ADRs y de tendencia de riesgo país y dólar MEP, y los datos de me
 
 Horarios (lunes a viernes, hora Argentina): el **premarket** se regenera cada 30 minutos entre las 8:00 y las 11:30 y el
 **postmarket** cada 30 minutos entre las 18:00 y las 20:00. Fuera de esas franjas queda la última edición hasta el día siguiente
-(desde el menú Carteras de la planilla se puede regenerar a mano). Después de publicar este cambio hay que volver a correr
-**Carteras → Instalar automatizaciones** para que tomen los nuevos horarios.
+(desde el menú Carteras de la planilla se puede regenerar a mano).
 
 Calendario económico: Forex Factory (EE.UU., zona euro, China, Reino Unido y Japón; impacto alto y medio) más los eventos
 locales que se carguen en la pestaña **Agenda** de la planilla (Fecha, Hora, Evento, Importancia), por ejemplo licitaciones
@@ -50,4 +49,6 @@ Dos agregados opcionales, que se activan en Apps Script → ⚙ Configuración d
 
 ## Notas
 - La planilla, los disparadores y los permisos de Google no se tocan con la publicación: solo cambia el código.
-- Si se agregan funciones nuevas con disparadores, volver a correr **Carteras → Instalar automatizaciones** desde la planilla.
+- Los disparadores se actualizan solos: si el código cambia horarios (constante `VERSION_DISPARADORES` en `Codigo.gs`),
+  el disparador de precios los reinstala en menos de 15 minutos. **Carteras → Instalar automatizaciones** sigue disponible
+  para la instalación inicial o para forzarlo.
