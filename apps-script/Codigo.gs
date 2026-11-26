@@ -1,0 +1,585 @@
+/**
+ * Carteras en vivo — Google Apps Script
+ *
+ * - actualizarPrecios(): cada 15 min, lunes a viernes 10:30–18:15 (hora Argentina), trae precios de Rava.
+ * - revisarAlertas(): todos los días a las 9, registra en la pestaña Alertas los cheques que se acreditan ese día.
+ * - generarPremarket() 9:15, generarPostmarket() 18:30 (lunes a viernes) y generarSemanal() lunes 8:00:
+ *   arman los informes con datos públicos (Rava, TradingView, DolarApi, ArgentinaDatos, Ámbito, Infobae, El Cronista).
+ * - doGet(): sirve la página web (Portfolio, Alertas e Informes).
+ *
+ * No envía mails. Instalación: menú Carteras → "Instalar automatizaciones" (una sola vez).
+ */
+
+const TZ = 'America/Argentina/Buenos_Aires';
+const RAVA_URL = 'https://mercado.rava.com/api/prices/arg';
+const CLASES_PRECIO = ['Acciones', 'CEDEARs', 'Bonos', 'Letras', 'ONs'];
+const CLASES_BONO = ['Bonos', 'Letras', 'ONs'];
+const RAVA_USD = { BPOC7: 'BPC7D', BPOD7: 'BPD7D' };   // BOPREAL en USD
+const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const CFG = { mepVivo: 'B2', mepUsado: 'B4', actualizado: 'B5', tenencias: 'B7', alertasActivas: 'B8', diasProx: 'B9', estado: 'B10' };
+const HANDLERS = ['actualizarPrecios', 'revisarAlertas', 'avisoCheques', 'generarPremarket', 'generarPostmarket', 'generarSemanal'];
+
+// ================================================================ menú e instalación
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('Carteras')
+    .addItem('Actualizar precios ahora', 'actualizarPreciosAhora')
+    .addItem('Revisar alertas ahora', 'revisarAlertasAhora')
+    .addSeparator()
+    .addItem('Generar informe premarket', 'premarketAhora')
+    .addItem('Generar informe postmarket', 'postmarketAhora')
+    .addItem('Generar informe semanal', 'semanalAhora')
+    .addSeparator()
+    .addItem('Instalar automatizaciones', 'instalar')
+    .addToUi();
+}
+
+function instalar() {
+  ScriptApp.getProjectTriggers().forEach(t => { if (HANDLERS.includes(t.getHandlerFunction())) ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('actualizarPrecios').timeBased().everyMinutes(15).create();
+  ScriptApp.newTrigger('revisarAlertas').timeBased().atHour(9).nearMinute(0).everyDays(1).inTimezone(TZ).create();
+  ScriptApp.newTrigger('generarPremarket').timeBased().atHour(9).nearMinute(15).everyDays(1).inTimezone(TZ).create();
+  ScriptApp.newTrigger('generarPostmarket').timeBased().atHour(18).nearMinute(30).everyDays(1).inTimezone(TZ).create();
+  ScriptApp.newTrigger('generarSemanal').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).nearMinute(0).inTimezone(TZ).create();
+  const r = [actualizarPrecios_(true), revisarAlertas_(), generarInforme_('premarket', true), generarInforme_('postmarket', true), generarInforme_('semanal', true)];
+  SpreadsheetApp.getUi().alert('Automatizaciones instaladas:\n· Precios cada 15 minutos en horario de mercado\n· Alertas de cheques 9:00 h\n· Informe premarket 9:15 h y postmarket 18:30 h (lunes a viernes)\n· Informe semanal los lunes 8:00 h\n\n' + r.join('\n'));
+}
+
+function actualizarPreciosAhora() { SpreadsheetApp.getUi().alert(actualizarPrecios_(true)); }
+function revisarAlertasAhora() { SpreadsheetApp.getUi().alert(revisarAlertas_()); }
+function premarketAhora() { SpreadsheetApp.getUi().alert(generarInforme_('premarket', true)); }
+function postmarketAhora() { SpreadsheetApp.getUi().alert(generarInforme_('postmarket', true)); }
+function semanalAhora() { SpreadsheetApp.getUi().alert(generarInforme_('semanal', true)); }
+
+function cfg_(ss) { return ss.getSheetByName('Config'); }
+function estado_(ss, msg) { cfg_(ss).getRange(CFG.estado).setValue(Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' · ' + msg); }
+
+// ================================================================ precios
+function actualizarPrecios() { actualizarPrecios_(false); }   // la llama el disparador
+
+function enHorario_() {
+  const now = new Date();
+  const dow = +Utilities.formatDate(now, TZ, 'u');            // 1 = lunes … 7 = domingo
+  const min = +Utilities.formatDate(now, TZ, 'H') * 60 + +Utilities.formatDate(now, TZ, 'm');
+  return dow <= 5 && min >= 10 * 60 + 25 && min <= 18 * 60 + 15;
+}
+
+function actualizarPrecios_(forzar) {
+  if (!forzar && !enHorario_()) return 'Fuera de horario de mercado.';
+  const ss = SpreadsheetApp.getActive();
+  try {
+    agregarPosicionesNuevas_(ss);
+    const want = especiesAPedir_(ss);
+    const res = UrlFetchApp.fetch(RAVA_URL, { muteHttpExceptions: true, headers: { Accept: 'application/json' } });
+    if (res.getResponseCode() !== 200) throw new Error('Rava respondió HTTP ' + res.getResponseCode());
+    const datos = JSON.parse(res.getContentText()).datos || [];
+
+    const best = {};
+    datos.forEach(x => {
+      if (x.plazo !== 1 && x.plazo !== 2) return;
+      const ult = parseFloat(x.ultimo) || 0, ant = parseFloat(x.anterior) || 0;
+      const k = x.simbolo + '|' + x.moneda;
+      const score = (ult > 0 ? 2 : 0) + (x.plazo === 2 ? 1 : 0);   // 24 hs con precio primero
+      if (!best[k] || score > best[k].score) best[k] = { score, ult, ant, hora: x.hora, plazo: x.plazo, sym: x.simbolo };
+    });
+
+    const filas = [], faltan = [];
+    Object.keys(want).sort().forEach(t => {
+      const w = want[t], b = best[w.sym + '|' + w.mon];
+      if (!b || b.ult <= 0) { faltan.push(t); return; }
+      if (w.ref && !(b.ult / w.ref > 0.4 && b.ult / w.ref < 2.5)) { faltan.push(t); return; }   // precio absurdo
+      let chg = b.ant > 0 ? b.ult / b.ant - 1 : 0;
+      if (Math.abs(chg) >= 0.5) chg = 0;
+      filas.push([t, b.ult, b.ant, chg, b.hora, b.plazo, b.sym]);
+    });
+    if (filas.length < 10) throw new Error('Rava devolvió muy pocos precios (' + filas.length + '). No se tocó nada.');
+
+    const P = ss.getSheetByName('Precios');
+    const last = P.getLastRow();
+    if (last > 1) P.getRange(2, 1, last - 1, 7).clearContent();
+    P.getRange(2, 1, filas.length, 7).setValues(filas);
+
+    const a = best['AL30|ARS'], d = best['AL30D|USD'];
+    if (a && d && a.ult > 0 && d.ult > 0) cfg_(ss).getRange(CFG.mepVivo).setValue(Math.round(a.ult / d.ult * 100) / 100);
+    cfg_(ss).getRange(CFG.actualizado).setValue(new Date());
+    const msg = 'Precios OK: ' + filas.length + ' especies' + (faltan.length ? '. Sin precio: ' + faltan.join(', ') : '') + '.';
+    estado_(ss, msg);
+    return msg;
+  } catch (e) {
+    const msg = 'Error al actualizar precios: ' + e.message;
+    estado_(ss, msg);
+    return msg;
+  }
+}
+
+function especiesAPedir_(ss) {
+  const X = ss.getSheetByName('Posiciones');
+  const v = X.getRange(2, 1, Math.max(X.getLastRow() - 1, 1), 12).getValues();
+  const want = {};
+  v.forEach(r => {
+    const t = String(r[2]).trim(), clase = r[4], mon = r[5];
+    if (!t || !CLASES_PRECIO.includes(clase)) return;
+    const usd = mon === 'USD' && CLASES_BONO.includes(clase);
+    if (!want[t]) want[t] = { sym: usd ? (RAVA_USD[t] || t + 'D') : t, mon: usd ? 'USD' : 'ARS', ref: Number(r[11]) || null };
+  });
+  return want;
+}
+
+// Si en Movimientos hay una compra de una especie que la cuenta no tenía, le agrega la fila en Posiciones.
+function agregarPosicionesNuevas_(ss) {
+  const X = ss.getSheetByName('Posiciones'), M = ss.getSheetByName('Movimientos');
+  const pos = X.getRange(2, 1, Math.max(X.getLastRow() - 1, 1), 12).getValues();
+  const tiene = new Set(pos.filter(r => r[2]).map(r => r[0] + '|' + r[2]));
+  const modelo = {};
+  pos.forEach(r => { if (r[2] && !modelo[r[2]]) modelo[r[2]] = r; });
+  const movs = M.getRange(2, 1, Math.max(M.getLastRow() - 1, 1), 6).getValues();
+  let fila = pos.findIndex(r => !r[2]); fila = fila < 0 ? pos.length + 2 : fila + 2;
+  movs.forEach(m => {
+    const cta = String(m[1]).trim(), t = String(m[2]).trim().toUpperCase();
+    if (!cta || !t || m[3] !== 'Compra' || tiene.has(cta + '|' + t)) return;
+    const mod = modelo[t];
+    const cliente = (pos.find(r => String(r[0]) === cta) || [])[1] || '';
+    const f9 = X.getRange(2, 9).getFormulaR1C1(), f10 = X.getRange(2, 10).getFormulaR1C1();
+    X.getRange(fila, 1, 1, 8).setValues([[cta, cliente, t, mod ? mod[3] : '(completar)', mod ? mod[4] : 'Acciones', mod ? mod[5] : 'ARS', mod ? mod[6] : 1, 0]]);
+    X.getRange(fila, 9, 1, 2).setFormulasR1C1([[f9, f10]]);
+    X.getRange(fila, 12).setValue(mod ? mod[11] : m[5]);
+    tiene.add(cta + '|' + t); fila++;
+  });
+}
+
+// ================================================================ alertas
+function revisarAlertas() { revisarAlertas_(); }   // la llama el disparador
+
+function revisarAlertas_() {
+  const ss = SpreadsheetApp.getActive();
+  if (String(cfg_(ss).getRange(CFG.alertasActivas).getValue()).trim().toUpperCase() === 'NO') return 'Alertas pausadas en Config.';
+  const A = ss.getSheetByName('Alertas');
+  const claves = new Set(A.getLastRow() > 1 ? A.getRange(2, 7, A.getLastRow() - 1, 1).getValues().map(r => String(r[0])) : []);
+  const hoyK = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const clave = 'CHQ-' + hoyK;
+  if (claves.has(clave)) return 'La alerta de cheques de hoy ya estaba registrada.';
+
+  const ch = chequesRaw_(ss).filter(c => c.acred && Utilities.formatDate(c.acred, TZ, 'yyyy-MM-dd') === hoyK);
+  if (!ch.length) return 'Hoy no se acredita ningún cheque.';
+  const total = ch.reduce((s, c) => s + c.nominal, 0);
+  const dmy = d => Utilities.formatDate(d, TZ, 'dd/MM/yyyy');
+  let det = ch.map(c => '- ' + c.cliente + ' (Cta. ' + c.cuenta + ') - Titular: ' + c.librador + (c.numero ? ' - N° de cheque: ' + c.numero : '') +
+    (c.vto ? ' - Vencimiento: ' + dmy(c.vto) : '') + ' - Monto nominal: ' + pesos_(c.nominal)).join('\n');
+  det += '\n\nTotal a acreditar hoy (' + ch.length + (ch.length === 1 ? ' cheque' : ' cheques') + '): ' + pesos_(total) +
+    '\nLos fondos quedan disponibles en la cuenta comitente para su posterior aplicación. Fechas según la liquidación informada por Nasini; montos nominales.';
+  const ctas = [...new Set(ch.map(c => c.cuenta))].join(', ');
+  A.insertRowAfter(1);
+  A.getRange(2, 1, 1, 7).setValues([[new Date(), 'Cheques', 'Acreditación de cheques – ' + dmy(new Date()), det, ctas, total, clave]]);
+  return 'Alerta registrada: ' + ch.length + ' cheques por ' + pesos_(total) + '.';
+}
+
+function chequesRaw_(ss) {
+  const Q = ss.getSheetByName('Cheques');
+  const n = Q.getLastRow() - 1;
+  if (n < 1) return [];
+  return Q.getRange(2, 1, n, 11).getValues().filter(r => r[2]).map(r => ({
+    cuenta: String(r[0]), cliente: r[1], codigo: r[2], librador: r[3], numero: String(r[4] || ''),
+    vto: r[5] instanceof Date ? r[5] : null, acred: r[6] instanceof Date ? r[6] : null,
+    nominal: Number(r[7]) || 0, estado: r[9], valor: Number(r[10]) || 0,
+  }));
+}
+
+function pesos_(x) {
+  const s = (Math.round((Number(x) || 0) * 100) / 100).toFixed(2).split('.');
+  return '$' + s[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + s[1];
+}
+
+// ================================================================ informes (premarket, postmarket, semanal)
+// Se arman solo con datos públicos; no usan IA. Se guardan como JSON en la pestaña "Informes"
+// (premarket y postmarket se sobrescriben; los semanales se acumulan) y la página los muestra.
+
+const TV_SCAN = 'https://scanner.tradingview.com/global/scan';
+const MACRO = [
+  ['SP:SPX', 'S&P 500', 'eeuu'], ['NASDAQ:IXIC', 'Nasdaq Composite', 'eeuu'], ['DJ:DJI', 'Dow Jones', 'eeuu'],
+  ['CME_MINI:ES1!', 'Futuro S&P 500', 'futuros'], ['CME_MINI:NQ1!', 'Futuro Nasdaq 100', 'futuros'], ['CBOT_MINI:YM1!', 'Futuro Dow Jones', 'futuros'],
+  ['CBOE:VIX', 'VIX (volatilidad)', 'riesgo'], ['TVC:US10Y', 'Bono del Tesoro EE.UU. 10 años (%)', 'riesgo'], ['TVC:US02Y', 'Bono del Tesoro EE.UU. 2 años (%)', 'riesgo'],
+  ['TVC:DXY', 'Índice dólar (DXY)', 'riesgo'], ['NYMEX:CL1!', 'Petróleo WTI', 'commodities'], ['ICEEUR:BRN1!', 'Petróleo Brent', 'commodities'],
+  ['COMEX:GC1!', 'Oro', 'commodities'], ['BITSTAMP:BTCUSD', 'Bitcoin', 'commodities'],
+  ['XETR:DAX', 'DAX (Alemania)', 'global'], ['TVC:SX5E', 'Euro Stoxx 50', 'global'], ['TVC:UKX', 'FTSE 100 (Reino Unido)', 'global'],
+  ['TVC:NI225', 'Nikkei 225 (Japón)', 'global'], ['TVC:HSI', 'Hang Seng (Hong Kong)', 'global'],
+];
+const ADRS = ['GGAL', 'YPF', 'PAM', 'BMA', 'SUPV', 'TGS', 'CEPU', 'IRS', 'LOMA', 'BBAR', 'TEO', 'EDN', 'CRESY', 'VIST', 'MELI', 'GLOB'];
+const RSS = [
+  ['Ámbito', 'https://www.ambito.com/rss/pages/finanzas.xml'],
+  ['Infobae', 'https://www.infobae.com/arc/outboundfeeds/rss/category/economia/'],
+  ['El Cronista', 'https://www.cronista.com/arc/outboundfeeds/rss/?outputType=xml'],
+];
+const PALABRAS = ['merval', 'riesgo país', 'riesgo pais', 'bonos', 'dólar', 'dolar', 'bcra', 'wall street', 'reserva federal', 'fed ', 'acciones',
+  'adr', 'inflación', 'licitación', 'tesoro', 'cedear', 'tasas', 'caución', 'mercados', 'byma', 'cnv', 'fmi', 'deuda'];
+const EMPRESAS = { GGAL: 'galicia', YPFD: 'ypf', PAMP: 'pampa', BMA: 'macro', SUPV: 'supervielle', TGSU2: 'transportadora de gas del sur',
+  TGNO4: 'gas del norte', METR: 'metrogas', ECOG: 'ecogas', LOMA: 'loma negra', IRSA: 'irsa', ALUA: 'aluar', TXAR: 'ternium', BBAR: 'bbva',
+  BYMA: 'byma', COME: 'comercial del plata', CEPU: 'central puerto', AGRO: 'agrometal', INVJ: 'juramento', MELI: 'mercadolibre', NVDA: 'nvidia',
+  MU: 'micron', TSM: 'tsmc', GOOGL: 'google', META: 'meta', NFLX: 'netflix', NKE: 'nike', MCD: "mcdonald", UBER: 'uber', IBM: 'ibm', AAL: 'american airlines',
+  JD: 'jd.com', NU: 'nubank', SNDK: 'sandisk', WMT: 'walmart', MSFT: 'microsoft' };
+
+function generarPremarket() { if (diaHabil_()) generarInforme_('premarket', false); }
+function generarPostmarket() { if (diaHabil_()) generarInforme_('postmarket', false); }
+function generarSemanal() { generarInforme_('semanal', false); }
+function diaHabil_() { return +Utilities.formatDate(new Date(), TZ, 'u') <= 5; }
+
+function generarInforme_(tipo, manual) {
+  const ss = SpreadsheetApp.getActive();
+  try {
+    if (tipo === 'postmarket') { actualizarPrecios_(true); SpreadsheetApp.flush(); }
+    const inf = tipo === 'premarket' ? armarPremarket_(ss) : tipo === 'postmarket' ? armarPostmarket_(ss) : armarSemanal_(ss);
+    guardarInforme_(ss, tipo, inf);
+    if (tipo === 'postmarket') guardarHistorial_(ss, inf);
+    const msg = 'Informe ' + tipo + ' generado (' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ').';
+    estado_(ss, msg);
+    return msg;
+  } catch (e) {
+    const msg = 'Error al generar el informe ' + tipo + ': ' + e.message;
+    estado_(ss, msg);
+    return msg;
+  }
+}
+
+// ---------------------------------------------------------------- almacenamiento
+function hoja_(ss, nombre, encabezado) {
+  let sh = ss.getSheetByName(nombre);
+  if (!sh) { sh = ss.insertSheet(nombre); sh.getRange(1, 1, 1, encabezado.length).setValues([encabezado]).setFontWeight('bold'); sh.setFrozenRows(1); }
+  return sh;
+}
+function guardarInforme_(ss, tipo, inf) {
+  const sh = hoja_(ss, 'Informes', ['Tipo', 'Fecha', 'Generado', 'Contenido (JSON)']);
+  const json = JSON.stringify(inf);
+  if (json.length > 49000) throw new Error('el informe supera el tamaño de una celda');
+  const fila = [tipo, inf.fecha, new Date(), json];
+  const n = sh.getLastRow() - 1;
+  if (tipo !== 'semanal' && n > 0) {
+    const tipos = sh.getRange(2, 1, n, 1).getValues().map(r => r[0]);
+    const i = tipos.indexOf(tipo);
+    if (i >= 0) { sh.getRange(i + 2, 1, 1, 4).setValues([fila]); return; }   // se sobrescribe
+  }
+  if (tipo === 'semanal' && n > 0) {   // si se regenera la misma semana, reemplaza
+    const v = sh.getRange(2, 1, n, 2).getValues();
+    const i = v.findIndex(r => r[0] === 'semanal' && r[1] === inf.fecha);
+    if (i >= 0) { sh.getRange(i + 2, 1, 1, 4).setValues([fila]); return; }
+  }
+  sh.insertRowAfter(1);
+  sh.getRange(2, 1, 1, 4).setValues([fila]);
+  const sem = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().map((r, i) => r[0] === 'semanal' ? i + 2 : 0).filter(Boolean);
+  sem.slice(26).reverse().forEach(r => sh.deleteRow(r));   // conserva 26 semanas
+}
+function guardarHistorial_(ss, inf) {
+  const sh = hoja_(ss, 'Historial', ['Fecha', 'Contenido (JSON)']);
+  const X = ss.getSheetByName('Posiciones');
+  const v = X.getRange(2, 1, Math.max(X.getLastRow() - 1, 1), 14).getValues();
+  const precios = {};
+  v.forEach(r => { if (r[2] && typeof r[13] === 'number') precios[r[2]] = r[13]; });
+  const snap = { fecha: inf.fecha, precios, mep: cfg_(ss).getRange(CFG.mepUsado).getValue(),
+    merval: inf.rueda && inf.rueda.merval, riesgo: inf.rueda && inf.rueda.riesgo, dolares: inf.rueda && inf.rueda.dolares,
+    spx: inf.rueda && inf.rueda.spx, cuentas: inf.cartera.cuentas.map(c => ({ cuenta: c.cuenta, cartera: c.cartera, capital: c.capital })) };
+  const n = sh.getLastRow() - 1;
+  const fechas = n > 0 ? sh.getRange(2, 1, n, 1).getValues().map(r => r[0]) : [];
+  const i = fechas.indexOf(inf.fecha);
+  if (i >= 0) sh.getRange(i + 2, 2).setValue(JSON.stringify(snap));
+  else { sh.insertRowAfter(1); sh.getRange(2, 1, 1, 2).setValues([[inf.fecha, JSON.stringify(snap)]]); }
+  if (sh.getLastRow() > 400) sh.deleteRows(401, sh.getLastRow() - 400);
+}
+function historial_(ss) {
+  const sh = ss.getSheetByName('Historial');
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().map(r => { try { return JSON.parse(r[1]); } catch (e) { return null; } }).filter(Boolean);
+}
+
+// ---------------------------------------------------------------- fuentes
+function fetchJson_(url, opts) {
+  const r = UrlFetchApp.fetch(url, Object.assign({ muteHttpExceptions: true, headers: { Accept: 'application/json' } }, opts || {}));
+  if (r.getResponseCode() !== 200) throw new Error(url.split('/')[2] + ' respondió HTTP ' + r.getResponseCode());
+  return JSON.parse(r.getContentText());
+}
+function tvScan_(tickers, cols) {
+  try {
+    const d = fetchJson_(TV_SCAN, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ symbols: { tickers }, columns: cols }) });
+    const o = {};
+    (d.data || []).forEach(x => { const v = {}; cols.forEach((c, i) => v[c] = x.d[i]); o[x.s] = v; });
+    return o;
+  } catch (e) { return {}; }
+}
+// Acciones de EE.UU. por ticker (prueba NASDAQ, NYSE y AMEX y se queda con la que exista).
+function tvEEUU_(nombres) {
+  const cols = ['close', 'change', 'premarket_change', 'premarket_close', 'postmarket_change', 'postmarket_close', 'earnings_release_next_date', 'description'];
+  const raw = tvScan_([].concat(...nombres.map(n => ['NASDAQ:' + n, 'NYSE:' + n, 'AMEX:' + n])), cols);
+  const o = {};
+  Object.keys(raw).forEach(s => { const n = s.split(':')[1]; if (!o[n]) o[n] = Object.assign({ simbolo: s }, raw[s]); });
+  return o;
+}
+function macro_() {
+  const m = tvScan_(MACRO.map(x => x[0]), ['close', 'change']);
+  return MACRO.map(([s, n, g]) => ({ nombre: n, grupo: g, valor: m[s] ? m[s].close : null, var: m[s] ? m[s].change : null }));
+}
+function dolares_() {
+  try {
+    const d = fetchJson_('https://dolarapi.com/v1/dolares');
+    const nom = { oficial: 'Oficial', blue: 'Blue', bolsa: 'MEP', contadoconliqui: 'Contado con liquidación', mayorista: 'Mayorista', cripto: 'Cripto' };
+    return d.filter(x => nom[x.casa]).map(x => ({ nombre: nom[x.casa], compra: x.compra, venta: x.venta, hora: x.fechaActualizacion }));
+  } catch (e) { return []; }
+}
+function riesgoPais_() {
+  try { const d = fetchJson_('https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais/ultimo'); return { valor: d.valor, fecha: d.fecha }; }
+  catch (e) { return null; }
+}
+function ravaArg_() {
+  const datos = fetchJson_(RAVA_URL).datos || [];
+  const best = {};
+  datos.forEach(x => {
+    if (x.plazo !== 1 && x.plazo !== 2) return;
+    const ult = parseFloat(x.ultimo) || 0, ant = parseFloat(x.anterior) || 0;
+    const k = x.simbolo + '|' + x.moneda, score = (ult > 0 ? 2 : 0) + (x.plazo === 2 ? 1 : 0);
+    if (!best[k] || score > best[k].score) best[k] = { score, ult, ant, var: ant > 0 && ult > 0 ? (ult / ant - 1) * 100 : null };
+  });
+  const mv = datos.find(x => x.simbolo === 'SPMERVAL' || x.especie === 'SPMERVAL');
+  const merval = mv ? { valor: parseFloat(mv.ultimo) || null, anterior: parseFloat(mv.anterior) || null } : null;
+  if (merval && merval.valor && merval.anterior && merval.valor !== merval.anterior) merval.var = (merval.valor / merval.anterior - 1) * 100;
+  const mervalOk = merval && merval.var != null;
+  return { best, merval: mervalOk ? merval : null };
+}
+function ravaBonos_() {
+  try {
+    const o = {};
+    (fetchJson_('https://mercado.rava.com/api/prices/bonos').datos || []).forEach(x => {
+      o[x.especie] = { tir: parseFloat(x.tir) * 100, dm: parseFloat(x.dm), paridad: parseFloat(x.paridad) * 100, vto: x.vencimiento ? x.vencimiento.slice(0, 10) : '' };
+    });
+    return o;
+  } catch (e) { return {}; }
+}
+function noticias_(horas, max, claves) {
+  const desde = Date.now() - horas * 3600000, out = [], vistos = new Set();
+  RSS.forEach(([fuente, url]) => {
+    try {
+      const r = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (r.getResponseCode() !== 200) return;
+      const xml = r.getContentText();
+      (xml.match(/<item>[\s\S]*?<\/item>/g) || []).forEach(it => {
+        const g = tag => { const m = it.match(new RegExp('<' + tag + '>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</' + tag + '>')); return m ? m[1].trim() : ''; };
+        const titulo = g('title').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'"), link = g('link'), fecha = Date.parse(g('pubDate'));
+        if (!titulo || !/^https:\/\//.test(link) || !(fecha >= desde)) return;
+        const t = titulo.toLowerCase(), key = t.replace(/[^a-z0-9áéíóúñ]/g, '').slice(0, 60);
+        if (vistos.has(key)) return;
+        let score = 0;
+        claves.forEach(c => { if (t.includes(c)) score += 3; });
+        PALABRAS.forEach(p => { if (t.includes(p)) score += 1; });
+        if (!score) return;
+        vistos.add(key);
+        out.push({ titulo, link, fuente, fecha, score });
+      });
+    } catch (e) { /* una fuente caída no frena el informe */ }
+  });
+  return out.sort((a, b) => b.score - a.score || b.fecha - a.fecha).slice(0, max).map(({ score, ...x }) => x);
+}
+
+// ---------------------------------------------------------------- datos propios
+function cartera_(ss) {
+  const R = ss.getSheetByName('Resumen').getRange('A5:I11').getValues();
+  const num = v => typeof v === 'number' && isFinite(v) ? v : 0;
+  const cuentas = R.slice(0, 6).map(r => { const m = String(r[0]).match(/^(.*?)\s*\((\d+)\)$/);
+    return { cuenta: m ? m[2] : '', nombre: m ? m[1] : r[0], cartera: num(r[1]), varHoy: num(r[2]), varPct: num(r[3]) * 100, pnl: num(r[4]), pnlPct: num(r[5]) * 100, efectivo: num(r[6]), capital: num(r[7]) }; });
+  const t = R[6];
+  return { cuentas, total: { cartera: num(t[1]), varHoy: num(t[2]), varPct: num(t[3]) * 100, pnl: num(t[4]), pnlPct: num(t[5]) * 100, efectivo: num(t[6]), capital: num(t[7]) } };
+}
+function posiciones_(ss) {
+  const X = ss.getSheetByName('Posiciones');
+  return X.getRange(2, 1, Math.max(X.getLastRow() - 1, 1), 18).getValues().filter(r => r[2] && Number(r[9])).map(r => ({
+    cuenta: String(r[0]), ticker: String(r[2]), nombre: r[3], clase: r[4], moneda: r[5], div: Number(r[6]) || 1, cantidad: Number(r[9]),
+    precio: Number(r[13]) || null, precioNasini: Number(r[11]) || null, fuente: r[14], var: typeof r[15] === 'number' ? r[15] * 100 : null,
+    valor: Number(r[16]) || 0, varHoy: Number(r[17]) || 0 }));
+}
+function porEspecie_(pos) {
+  const m = {};
+  pos.forEach(p => { const x = m[p.ticker] = m[p.ticker] || { ticker: p.ticker, nombre: p.nombre, clase: p.clase, moneda: p.moneda, precio: p.precio, var: p.var, fuente: p.fuente, valor: 0, varHoy: 0, cuentas: [] };
+    x.valor += p.valor; x.varHoy += p.varHoy; if (!x.cuentas.includes(p.cuenta)) x.cuentas.push(p.cuenta); });
+  return Object.values(m);
+}
+function claves_(pos) {
+  const c = new Set();
+  pos.forEach(p => { if (EMPRESAS[p.ticker]) c.add(EMPRESAS[p.ticker]); });
+  return [...c];
+}
+function aforos_(ss, pos) {
+  const K = ss.getSheetByName('Cuentas').getRange(2, 1, 6, 11).getValues();
+  return ['11287', '11587'].map(cta => {
+    const k = K.find(r => String(r[0]) === cta); if (!k) return null;
+    const bonos = pos.filter(p => p.cuenta === cta && CLASES_BONO.includes(p.clase)).reduce((s, p) => s + p.valor, 0);
+    const cau = Number(k[4]) || 0;
+    return { cuenta: cta, caucion: cau, bonos, pct: bonos ? cau / bonos * 100 : null };
+  }).filter(Boolean);
+}
+function chequesEntre_(ss, d0, d1) {
+  const k = d => Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+  return chequesRaw_(ss).filter(c => c.acred && k(c.acred) >= d0 && k(c.acred) <= d1)
+    .map(c => ({ fecha: k(c.acred), cuenta: c.cuenta, librador: c.librador, numero: c.numero, nominal: c.nominal }))
+    .sort((a, b) => a.fecha < b.fecha ? -1 : 1);
+}
+function balances_(us, dias) {
+  const lim = Date.now() + dias * 86400000, out = [];
+  Object.keys(us).forEach(n => { const e = us[n].earnings_release_next_date; if (e && e * 1000 >= Date.now() - 43200000 && e * 1000 <= lim) out.push({ ticker: n, empresa: us[n].description, fecha: Utilities.formatDate(new Date(e * 1000), TZ, 'yyyy-MM-dd') }); });
+  return out.sort((a, b) => a.fecha < b.fecha ? -1 : 1);
+}
+function hoyK_(offsetDias) { return Utilities.formatDate(new Date(Date.now() + (offsetDias || 0) * 86400000), TZ, 'yyyy-MM-dd'); }
+function cedearsUS_(pos) { return [...new Set(pos.filter(p => p.clase === 'CEDEARs').map(p => p.ticker))]; }
+function fuentes_() { return ['BYMA vía Rava Bursátil', 'TradingView', 'DolarApi', 'ArgentinaDatos', 'Ámbito', 'Infobae', 'El Cronista', 'Resumen de Posiciones Nasini']; }
+
+// ---------------------------------------------------------------- premarket
+function armarPremarket_(ss) {
+  const pos = posiciones_(ss), esp = porEspecie_(pos), ced = cedearsUS_(pos);
+  const us = tvEEUU_([...new Set(ced.concat(ADRS))]);
+  const rava = ravaArg_();
+  const cedears = esp.filter(e => e.clase === 'CEDEARs').map(e => { const u = us[e.ticker] || {};
+    const pre = typeof u.premarket_change === 'number' ? u.premarket_change : null;
+    return { ticker: e.ticker, empresa: u.description || e.nombre, valor: e.valor, cierre: u.close, varCierre: u.change, pre, impacto: pre != null ? e.valor * pre / 100 : null, cuentas: e.cuentas }; })
+    .sort((a, b) => Math.abs(b.impacto || 0) - Math.abs(a.impacto || 0));
+  const impactoTotal = cedears.reduce((s, c) => s + (c.impacto || 0), 0);
+  const expCed = cedears.reduce((s, c) => s + c.valor, 0);
+  const adrs = ADRS.filter(t => us[t]).map(t => ({ ticker: t, empresa: us[t].description, cierre: us[t].close, varCierre: us[t].change,
+    pre: typeof us[t].premarket_change === 'number' ? us[t].premarket_change : null, local: (rava.best[(t === 'YPF' ? 'YPFD' : t === 'PAM' ? 'PAMP' : t === 'TGS' ? 'TGSU2' : t === 'IRS' ? 'IRSA' : t === 'TEO' ? 'TECO2' : t === 'CRESY' ? 'CRES' : t) + '|ARS'] || {}).var }));
+  const car = cartera_(ss);
+  return {
+    tipo: 'premarket', fecha: hoyK_(), generado: Date.now(),
+    macro: macro_(), adrs, cedears: cedears.slice(0, 25), impacto: { total: impactoTotal, exposicion: expCed, pct: expCed ? impactoTotal / expCed * 100 : null, cartera: car.total.cartera },
+    argentina: { merval: rava.merval, riesgo: riesgoPais_(), dolares: dolares_(), mep: cfg_(ss).getRange(CFG.mepUsado).getValue() },
+    cartera: car,
+    agenda: { cheques: chequesEntre_(ss, hoyK_(), hoyK_()), balances: balances_(us, 7) },
+    noticias: noticias_(20, 8, claves_(pos)), fuentes: fuentes_(),
+  };
+}
+
+// ---------------------------------------------------------------- postmarket
+function armarPostmarket_(ss) {
+  const pos = posiciones_(ss), esp = porEspecie_(pos), ced = cedearsUS_(pos);
+  const us = tvEEUU_([...new Set(ced.concat(ADRS))]);
+  const rava = ravaArg_(), bonosRef = ravaBonos_(), mac = macro_(), car = cartera_(ss);
+  const m = n => mac.find(x => x.nombre === n) || {};
+  const conVar = esp.filter(e => e.fuente === 'Rava' && e.var != null && CLASES_PRECIO.includes(e.clase));
+  const contrib = conVar.map(e => ({ ticker: e.ticker, nombre: e.nombre, clase: e.clase, var: e.var, aporte: e.varHoy, valor: e.valor, cuentas: e.cuentas }));
+  const suben = contrib.filter(x => x.aporte > 0).sort((a, b) => b.aporte - a.aporte).slice(0, 6);
+  const bajan = contrib.filter(x => x.aporte < 0).sort((a, b) => a.aporte - b.aporte).slice(0, 6);
+  const rv = contrib.filter(x => ['Acciones', 'CEDEARs'].includes(x.clase)).sort((a, b) => b.var - a.var);
+  const rf = esp.filter(e => CLASES_BONO.includes(e.clase)).map(e => { const sym = e.moneda === 'USD' ? (RAVA_USD[e.ticker] || e.ticker + 'D') : e.ticker;
+    const b = bonosRef[sym] || bonosRef[e.ticker] || {};
+    return { ticker: e.ticker, nombre: e.nombre, moneda: e.moneda, precio: e.precio, var: e.var, tir: isFinite(b.tir) ? b.tir : null, dm: isFinite(b.dm) ? b.dm : null,
+      paridad: isFinite(b.paridad) ? b.paridad : null, vto: b.vto || '', valor: e.valor, cuentas: e.cuentas }; })
+    .sort((a, b) => b.valor - a.valor);
+  const after = [...new Set(ced.concat(ADRS))].filter(t => us[t] && typeof us[t].postmarket_change === 'number' && Math.abs(us[t].postmarket_change) >= 0.01)
+    .map(t => ({ ticker: t, empresa: us[t].description, cierre: us[t].close, varCierre: us[t].change, post: us[t].postmarket_change, cartera: ced.includes(t) }))
+    .sort((a, b) => Math.abs(b.post) - Math.abs(a.post)).slice(0, 10);
+  const dol = dolares_(), rp = riesgoPais_();
+  const hist = historial_(ss), prev = hist.find(h => h.fecha < hoyK_());
+  return {
+    tipo: 'postmarket', fecha: hoyK_(), generado: Date.now(),
+    rueda: { merval: rava.merval, riesgo: rp, riesgoAnterior: prev && prev.riesgo ? prev.riesgo.valor : null, dolares: dol,
+      spx: { valor: m('S&P 500').valor, var: m('S&P 500').var }, ndx: { valor: m('Nasdaq Composite').valor, var: m('Nasdaq Composite').var },
+      dji: { valor: m('Dow Jones').valor, var: m('Dow Jones').var }, vix: { valor: m('VIX (volatilidad)').valor, var: m('VIX (volatilidad)').var },
+      us10: { valor: m('Bono del Tesoro EE.UU. 10 años (%)').valor, var: m('Bono del Tesoro EE.UU. 10 años (%)').var } },
+    macro: mac, cartera: car, suben, bajan, rentaVariable: rv.slice(0, 40), rentaFija: rf, aforo: aforos_(ss, pos), afterHours: after,
+    agenda: { cheques: chequesEntre_(ss, hoyK_(1), hoyK_(4)), balances: balances_(us, 7) },
+    noticias: noticias_(12, 8, claves_(pos)), fuentes: fuentes_(),
+  };
+}
+
+// ---------------------------------------------------------------- semanal
+function armarSemanal_(ss) {
+  const pos = posiciones_(ss), hist = historial_(ss);   // historial: más reciente primero
+  const mep = Number(cfg_(ss).getRange(CFG.mepUsado).getValue()) || 1;
+  const fin = hist[0] || null;
+  const corte = fin ? fin.fecha : hoyK_();
+  const limite = Utilities.formatDate(new Date(Date.parse(corte + 'T12:00:00-03:00') - 6 * 86400000), TZ, 'yyyy-MM-dd');
+  const ini = hist.find(h => h.fecha <= limite) || hist[hist.length - 1] || null;
+  const usaNasini = !ini || ini === fin;
+  const base = t => usaNasini ? null : ini.precios[t];
+  const ult = t => fin && fin.precios[t] != null ? fin.precios[t] : null;
+  const filas = pos.filter(p => CLASES_PRECIO.includes(p.clase)).map(p => {
+    const p1 = ult(p.ticker) != null ? ult(p.ticker) : p.precio, p0 = base(p.ticker) != null ? base(p.ticker) : p.precioNasini;
+    const k = p.cantidad / p.div * (p.moneda === 'USD' ? mep : 1);
+    return Object.assign({}, p, { p0, p1, aporte: p0 && p1 ? (p1 - p0) * k : 0, v0: p0 ? p0 * k : 0, v1: p1 ? p1 * k : 0, varSem: p0 && p1 ? (p1 / p0 - 1) * 100 : null });
+  });
+  const cuentas = ['11200', '11710', '11750', '11054', '11287', '11587'].map(cta => {
+    const f = filas.filter(x => x.cuenta === cta), v0 = f.reduce((s, x) => s + x.v0, 0), ap = f.reduce((s, x) => s + x.aporte, 0);
+    const c = cartera_(ss).cuentas.find(x => x.cuenta === cta) || {};
+    return { cuenta: cta, nombre: c.nombre, aporte: ap, pct: v0 ? ap / v0 * 100 : null, capital: c.capital, cartera: c.cartera };
+  });
+  const esp = {};
+  filas.forEach(x => { const e = esp[x.ticker] = esp[x.ticker] || { ticker: x.ticker, nombre: x.nombre, clase: x.clase, varSem: x.varSem, aporte: 0, cuentas: [] };
+    e.aporte += x.aporte; if (!e.cuentas.includes(x.cuenta)) e.cuentas.push(x.cuenta); });
+  const lista = Object.values(esp);
+  const totAp = cuentas.reduce((s, c) => s + c.aporte, 0), totV0 = filas.reduce((s, x) => s + x.v0, 0);
+  const ced = cedearsUS_(pos), us = tvEEUU_([...new Set(ced.concat(ADRS))]);
+  const serie = hist.filter(h => h.fecha >= (ini ? ini.fecha : '0') && h.fecha <= corte).reverse()
+    .map(h => ({ fecha: h.fecha, riesgo: h.riesgo ? h.riesgo.valor : null, merval: h.merval ? h.merval.valor : null, mep: h.mep }));
+  return {
+    tipo: 'semanal', fecha: hoyK_(), generado: Date.now(),
+    periodo: { desde: usaNasini ? 'Resumen Nasini ' + cfg_(ss).getRange(CFG.tenencias).getDisplayValue() : ini.fecha, hasta: corte, baseNasini: usaNasini },
+    total: { aporte: totAp, pct: totV0 ? totAp / totV0 * 100 : null, aporteUSD: totAp / mep, capital: cartera_(ss).total.capital, mep },
+    cuentas, suman: lista.filter(x => x.aporte > 0).sort((a, b) => b.aporte - a.aporte).slice(0, 5), restan: lista.filter(x => x.aporte < 0).sort((a, b) => a.aporte - b.aporte).slice(0, 5),
+    mercado: { inicio: ini && !usaNasini ? { riesgo: ini.riesgo, merval: ini.merval, mep: ini.mep, spx: ini.spx } : null, fin: fin ? { riesgo: fin.riesgo, merval: fin.merval, mep: fin.mep, spx: fin.spx } : null, serie },
+    macro: macro_(),
+    agenda: { cheques: chequesEntre_(ss, hoyK_(), hoyK_(6)), balances: balances_(us, 7) },
+    noticias: noticias_(72, 6, claves_(pos)), fuentes: fuentes_(),
+  };
+}
+
+function informesParaWeb_(ss) {
+  const sh = ss.getSheetByName('Informes');
+  const out = { premarket: null, postmarket: null, semanales: [] };
+  if (!sh || sh.getLastRow() < 2) return out;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues().forEach(r => {
+    let j = null; try { j = JSON.parse(r[3]); } catch (e) { return; }
+    if (r[0] === 'premarket' && !out.premarket) out.premarket = j;
+    else if (r[0] === 'postmarket' && !out.postmarket) out.postmarket = j;
+    else if (r[0] === 'semanal' && out.semanales.length < 12) out.semanales.push(j);
+  });
+  return out;
+}
+
+// ================================================================ página web
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('Index')
+    .setTitle('Carteras en vivo')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);   // permite insertarla en Google Sites
+}
+
+// Todo lo que muestra la página, en una sola llamada (las fechas van como milisegundos).
+function getData() {
+  const ss = SpreadsheetApp.getActive();
+  const C = cfg_(ss);
+  const ms = d => d instanceof Date ? d.getTime() : null;
+  const num = v => typeof v === 'number' && isFinite(v) ? v : null;
+
+  const X = ss.getSheetByName('Posiciones');
+  const lines = X.getRange(2, 1, Math.max(X.getLastRow() - 1, 1), 21).getValues().filter(r => r[2] && Number(r[9])).map(r => ({
+    cuenta: String(r[0]), cliente: r[1], ticker: String(r[2]), instrumento: r[3], clase: r[4], moneda: r[5], div: Number(r[6]) || 1,
+    cantNasini: num(r[7]), cantidad: num(r[9]), ppc: num(r[12]), precioNasini: num(r[11]), precio: num(r[13]), fuente: r[14],
+    varPct: num(r[15]), valorArs: num(r[16]), varHoy: num(r[17]), costoArs: num(r[18]) }));
+
+  const K = ss.getSheetByName('Cuentas');
+  const cuentas = K.getRange(2, 1, Math.max(K.getLastRow() - 1, 1), 11).getValues().filter(r => /^\d+$/.test(String(r[0]))).map(r => ({
+    cuenta: String(r[0]), cliente: r[1],
+    dineroARS: (num(r[2]) || 0) + (num(r[4]) || 0), dineroUSD: (num(r[3]) || 0) + (num(r[5]) || 0),   // efectivo neto + caución = dinero
+    caucARS: num(r[4]) || 0, caucUSD: num(r[5]) || 0, movARS: num(r[6]) || 0, movUSD: num(r[7]) || 0, chqAcred: num(r[8]) || 0,
+    efARS: num(r[9]) || 0, efUSD: num(r[10]) || 0 }));
+
+  const cheques = chequesRaw_(ss).map(c => ({ cuenta: c.cuenta, cliente: c.cliente, codigo: c.codigo, librador: c.librador, numero: c.numero,
+    vto: ms(c.vto), acred: ms(c.acred), nominal: c.nominal, estado: c.estado, valor: c.valor,
+    factor: c.nominal ? c.valor / c.nominal : null }));
+
+  const A = ss.getSheetByName('Alertas');
+  const alertas = A.getLastRow() > 1 ? A.getRange(2, 1, Math.min(A.getLastRow() - 1, 100), 6).getValues().filter(r => r[2]).map(r => ({
+    fecha: ms(r[0]), tipo: r[1], titulo: r[2], detalle: r[3], cuentas: String(r[4]), monto: num(r[5]) })) : [];
+
+  const M = ss.getSheetByName('Movimientos');
+  const movimientos = M.getLastRow() > 1 ? M.getRange(2, 1, M.getLastRow() - 1, 9).getValues().filter(r => r[1] && r[3]).map(r => ({
+    fecha: ms(r[0]), cuenta: String(r[1]), ticker: String(r[2]), tipo: r[3], cantidad: num(r[4]), precio: num(r[5]), moneda: r[6],
+    importe: num(r[7]), nota: r[8] })).slice(-50).reverse() : [];
+
+  return {
+    meta: { actualizado: ms(C.getRange(CFG.actualizado).getValue()), mep: num(C.getRange(CFG.mepUsado).getValue()),
+      mepNasini: num(C.getRange('B3').getValue()), tenenciasAl: String(C.getRange(CFG.tenencias).getDisplayValue()),
+      estado: String(C.getRange(CFG.estado).getValue()), diasProx: Number(C.getRange(CFG.diasProx).getValue()) || 30, ahora: Date.now() },
+    lines, cuentas, cheques, alertas, movimientos, informes: informesParaWeb_(ss),
+  };
+}

@@ -1,0 +1,44 @@
+name: Publicar en Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps-script/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: apps-script-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar clasp
+        run: npm install -g @google/clasp@2.4.2
+
+      - name: Credenciales y proyecto
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ vars.SCRIPT_ID }}
+        run: |
+          test -n "$CLASPRC_JSON" || { echo "::error::Falta el secreto CLASPRC_JSON"; exit 1; }
+          test -n "$SCRIPT_ID" || { echo "::error::Falta la variable SCRIPT_ID"; exit 1; }
+          printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+          printf '{"scriptId":"%s","rootDir":"apps-script"}' "$SCRIPT_ID" > .clasp.json
+
+      - name: Subir el código
+        run: clasp push --force
+
+      - name: Publicar nueva versión (mismo link)
+        env:
+          DEPLOYMENT_ID: ${{ vars.DEPLOYMENT_ID }}
+        run: |
+          test -n "$DEPLOYMENT_ID" || { echo "::error::Falta la variable DEPLOYMENT_ID"; exit 1; }
+          clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "$(git log -1 --pretty=%s | cut -c1-90)"
