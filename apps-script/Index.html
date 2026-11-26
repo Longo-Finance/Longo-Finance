@@ -103,7 +103,32 @@ tr.click{cursor:pointer}
 .sub-nav .tab{padding:9px 12px;font-size:12.5px}
 .cnt{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red);color:#fff;font-size:11px;margin-left:4px}
 .adet{margin:6px 0 0;white-space:pre-wrap;font-family:inherit;font-size:12px;color:var(--text)}
-#alertas.section,#informes.section{display:none}#alertas.section.on,#informes.section.on{display:block}
+#alertas.section,#informes.section,#noticias.section{display:none}#alertas.section.on,#informes.section.on,#noticias.section.on{display:block}
+body.locked .header,body.locked .nav,body.locked .main,body.locked .site-foot{display:none!important}
+.login{min-height:100vh;display:grid;place-items:center;padding:24px 16px;background:linear-gradient(160deg,var(--header) 0%,var(--bg) 62%)}
+.lcard{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 40px rgba(15,24,35,.18);padding:30px 28px;display:grid;gap:14px}
+.lbrand{font-size:24px;font-weight:700;color:var(--accent)}.lbrand span{color:var(--accent2)}
+.lkick{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-top:-10px}
+.lcard p{margin:0;font-size:13.5px;color:var(--text)}
+.lcard input{width:100%;font:inherit;font-size:22px;letter-spacing:.4em;text-align:center;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-family:'JetBrains Mono',monospace}
+.lcard input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.lcard .btn{width:100%;background:var(--accent);color:#fff;border-color:var(--accent);font-size:14px;font-weight:600;min-height:42px}
+.lerr{color:var(--red);font-size:13px;min-height:18px}
+.lfoot{font-size:11.5px!important;color:var(--muted)!important;border-top:1px solid var(--border);padding-top:12px}
+.vsel{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#e6eef8;height:30px;border-radius:6px;font:inherit;font-size:12px;padding:0 8px}
+.vsel option{color:#1c2733}
+.pbar{background:var(--yellow);color:#1c2733;text-align:center;font-size:12.5px;font-weight:600;padding:7px 12px}
+.pbar button{margin-left:10px;font:inherit;font-size:12px;border:1px solid #1c2733;background:transparent;border-radius:5px;padding:2px 8px;cursor:pointer}
+.mstrip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.mstrip .kpi{padding:11px 13px}.mstrip .kpi .v{font-size:17px}
+.nfil{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.nfil input{flex:1;min-width:180px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:7px 10px;font:inherit;font-size:13px;min-height:36px}
+.nday{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:18px 0 8px}
+.ncard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px 16px;margin-bottom:8px;display:grid;gap:5px;box-shadow:var(--shadow)}
+.ncard a{color:var(--text);font-weight:600;font-size:14.5px;text-decoration:none;line-height:1.35}.ncard a:hover{color:var(--accent);text-decoration:underline}
+.ncard p{margin:0;font-size:13px;color:var(--muted)}
+.nmeta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:11.5px;color:var(--muted)}
+.ntag{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:1px 7px;border-radius:999px;background:var(--surface2);border:1px solid var(--border);color:var(--accent)}
 .site-foot{max-width:1400px;margin:8px auto 0;padding:18px 16px 28px;border-top:1px solid var(--border);color:var(--muted);font-size:11.5px;line-height:1.6;display:grid;gap:4px}
 .site-foot b{color:var(--text)}
 /* informes */
@@ -193,19 +218,31 @@ tr.np-alta td{background:color-mix(in srgb,var(--red) 6%,transparent)}
 </style>
 </head>
 <body>
+<section id="login" class="login" hidden>
+  <div class="lcard">
+    <div class="lbrand">Longo <span>Finance</span></div>
+    <div class="lkick">Portal de clientes</div>
+    <div id="lbody"></div>
+    <p class="lfoot">Si no dispone de su enlace personal o de su clave, comuníquese con su asesor.</p>
+  </div>
+</section>
 <header class="header">
-  <div class="logo">Longo <span>Finance</span><small>Gestión de carteras</small></div>
+  <div class="logo">Longo <span>Finance</span><small id="lsub">Gestión de carteras</small></div>
   <div class="hright">
+    <span class="badge" id="b-user" hidden></span>
+    <select id="ver" class="vsel" hidden aria-label="Ver como cliente"></select>
     <span class="badge" id="b-mkt">BYMA</span>
     <span class="badge" id="b-date">Cargando…</span>
     <span class="badge" id="b-tc">MEP —</span>
     <button class="icon-btn" id="theme" type="button" aria-label="Cambiar tema">◐ Tema</button>
+    <button class="icon-btn" id="salir" type="button" hidden>Salir</button>
   </div>
 </header>
 <nav class="nav main-nav" id="mnav">
-  <button type="button" class="tab on" data-m="portfolio">Portfolio</button>
-  <button type="button" class="tab" data-m="alertas">Alertas <span class="cnt" id="al-cnt" hidden></span></button>
-  <button type="button" class="tab" data-m="informes">Informes</button>
+  <button type="button" class="tab on" data-m="portfolio" id="t-port">Portfolio</button>
+  <button type="button" class="tab" data-m="alertas" data-admin>Alertas <span class="cnt" id="al-cnt" hidden></span></button>
+  <button type="button" class="tab" data-m="informes" data-admin>Informes</button>
+  <button type="button" class="tab" data-m="noticias">Noticias</button>
 </nav>
 <nav class="nav sub-nav" id="nav"></nav>
 <nav class="nav sub-nav" id="inav" hidden></nav>
@@ -214,6 +251,7 @@ tr.np-alta td{background:color-mix(in srgb,var(--red) 6%,transparent)}
   <div id="portfolio"></div>
   <div id="alertas" class="section"></div>
   <div id="informes" class="section"></div>
+  <div id="noticias" class="section"></div>
 </main>
 <footer class="site-foot">
   <div><b>Longo Finance</b> · Julián Longoni · Agente Productor CNV · Matrícula N° 2936</div>
@@ -305,11 +343,11 @@ const mnav=document.getElementById('mnav'), nav=document.getElementById('nav'), 
 function goMain(m){MAIN=m;try{localStorage.setItem('cv-main',m)}catch(e){}
   mnav.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.m===m));
   nav.hidden=m!=='portfolio';port.hidden=m!=='portfolio';document.getElementById('inav').hidden=m!=='informes';
-  document.getElementById('alertas').classList.toggle('on',m==='alertas');document.getElementById('informes').classList.toggle('on',m==='informes');
-  if(m==='portfolio')go(TAB);else if(m==='alertas')renderAlertas();else renderInformes();window.scrollTo({top:0})}
+  ['alertas','informes','noticias'].forEach(k=>document.getElementById(k).classList.toggle('on',m===k));
+  if(m==='portfolio')go(TAB);else if(m==='alertas')renderAlertas();else if(m==='informes')renderInformes();else renderNoticias();window.scrollTo({top:0})}
 mnav.onclick=e=>{const b=e.target.closest('.tab');if(b&&!b.disabled)goMain(b.dataset.m)};
 function buildNav(){
-  const TABS=[["resumen","Todas las cuentas"],...ORDER.map(a=>["c"+a,a+" · "+ACC[a].s])];
+  const TABS=[["resumen",ES_CLIENTE?(ORDER.length>1?"Resumen":"Mi cartera"):"Todas las cuentas"],...(ES_CLIENTE&&ORDER.length===1?[]:ORDER.map(a=>["c"+a,ES_CLIENTE?"Cuenta "+a:a+" · "+ACC[a].s]))];
   if(!TABS.some(t=>t[0]===TAB))TAB='resumen';
   nav.innerHTML=TABS.map(([k,l])=>`<button type="button" class="tab ${k===TAB?'on':''}" data-k="${k}">${esc(l)}</button>`).join('');
   port.innerHTML=TABS.map(([k])=>`<section class="section ${k===TAB?'on':''}" id="s-${k}"></section>`).join('');
@@ -351,6 +389,7 @@ function renderResumen(){
   ${sel.map(a=>{const s=S[a];return `<tr class="click" data-go="c${a}"><td class="l"><b>${a}</b> · ${esc(ACC[a].n)} <span class="hint">${esc(ACC[a].tag)}</span></td><td class="mono">${fA(s.gross)}</td><td class="mono ${s.caucARS||s.caucUSD?'neg':''}">${s.caucARS?fA(-s.caucARS):''}${s.caucUSD?(s.caucARS?' · ':'')+fU(-s.caucUSD):''}${!s.caucARS&&!s.caucUSD?'—':''}</td><td class="mono ${cl(s.pesos)}">${nf(s.pesos,0)}</td><td class="mono ${cl(s.usd)}">${s.usd?nf(s.usd):'—'}</td><td class="mono"><b>${nf(s.genARS,0)}</b></td><td class="mono"><b>${nf(s.genUSD)}</b></td><td class="mono ${cl(s.vdArs)}">${fA(s.vdArs)} <span class="hint">${fPct(s.prevArs?s.vdArs/s.prevArs*100:0)}</span></td><td class="mono ${cl(s.plARS)}">${s.costARS?fA(s.plARS):'—'}</td><td class="mono ${cl(s.plUSD)}">${s.costUSD?fU(s.plUSD):'—'}</td></tr>`}).join('')}
   <tr class="sub"><td class="l">Total</td><td class="mono">${fA(T('gross'))}</td><td class="mono neg">${fA(-T('caucARS'))}${T('caucUSD')?' · '+fU(-T('caucUSD')):''}</td><td class="mono">${nf(T('pesos'),0)}</td><td class="mono">${nf(T('usd'))}</td><td class="mono">${nf(T('genARS'),0)}</td><td class="mono">${nf(T('genUSD'))}</td><td class="mono ${cl(T('vdArs'))}">${fA(T('vdArs'))}</td><td class="mono ${cl(T('plARS'))}">${fA(T('plARS'))}</td><td class="mono ${cl(T('plUSD'))}">${fU(T('plUSD'))}</td></tr>
   </tbody></table></div></div>
+  <div class="card"><div class="ct">Evolución del patrimonio <span class="hint">cierre de cada rueda</span></div>${evoHtml(sel)}</div>
   <div class="grid2">
     <div class="card"><div class="ct">Exposición por moneda (cartera y caución)</div><div class="chart tall"><canvas id="r-exp"></canvas></div><div class="note">CEDEARs cotizan en pesos pero siguen al dólar CCL; dollar-linked = TZV27, TZV28, TMVE8.</div></div>
     <div class="card"><div class="ct">Composición consolidada (sin caución)</div><div class="chart tall"><canvas id="r-pie"></canvas></div></div>
@@ -383,6 +422,7 @@ function renderResumen(){
   const ps=pl.length>16?[...pl.slice(0,8),...pl.slice(-8)]:pl;
   chart('r-pl',hbar(ps.map(x=>x.k),ps.map(x=>x.v),fPct));
   echeqMonths(pend,'r-ech');
+  evoChart(sel,div,fm);
   const o=D.movimientos.filter(m=>sel.includes(m.cuenta)).slice(0,10);
   document.getElementById('r-ops').innerHTML=o.length?`<div class="tw"><table><thead><tr><th class="l">Fecha</th><th class="l">Cuenta</th><th class="l">Operación</th><th>Cantidad</th><th>Precio</th><th>Importe</th></tr></thead><tbody>${o.map(m=>`<tr><td class="l">${m.fecha?dmy(m.fecha).slice(0,5):''}</td><td class="l"><b>${esc(m.cuenta)}</b></td><td class="l">${esc(m.tipo)} ${m.ticker?`<span class="tk">${esc(m.ticker)}</span>`:''}</td><td class="mono">${m.cantidad!=null?nf(m.cantidad,0):''}</td><td class="mono">${m.precio!=null?nf(m.precio):''}</td><td class="mono ${cl(m.importe)}">${m.importe!=null?nf(m.importe,0):''}</td></tr>`).join('')}</tbody></table></div>`:'<div class="note">Sin movimientos registrados con posterioridad al último Resumen de Posiciones.</div>';
 }
@@ -746,6 +786,78 @@ function renderSem(w,todas){
   ${repFoot(w,'Resultado semanal calculado con los cierres registrados por el sistema al final de cada rueda.')}</article>`;
 }
 
+// ═══════════ evolución ═══════════
+function evoSerie(sel){return (D.historial||[]).map(h=>{const cs=h.cuentas.filter(c=>sel.includes(String(c.cuenta)));return{fecha:h.fecha,capital:cs.reduce((s,c)=>s+(+c.capital||0),0),cartera:cs.reduce((s,c)=>s+(+c.cartera||0),0),n:cs.length}}).filter(x=>x.n)}
+function evoHtml(sel){const s=evoSerie(sel);if(s.length<2)return `<div class="note">La serie se arma con el cierre de cada rueda${s.length?' a partir del '+esc(s[0].fecha.slice(8,10)+'/'+s[0].fecha.slice(5,7)):''}. El gráfico aparece a partir del segundo cierre registrado.</div>`;return '<div class="chart"><canvas id="r-evo"></canvas></div>'}
+function evoChart(sel,div,fm){const s=evoSerie(sel);if(s.length<2)return;const lab=s.map(x=>x.fecha.slice(8,10)+'/'+x.fecha.slice(5,7));
+  chart('r-evo',{type:'line',data:{labels:lab,datasets:[{label:'Cartera (sin caución)',data:s.map(x=>x.cartera/div),borderColor:'#5b84b8',backgroundColor:'rgba(91,132,184,.10)',fill:true,tension:.25,pointRadius:2},{label:'Capital total',data:s.map(x=>x.capital/div),borderColor:css('--accent'),tension:.25,pointRadius:2}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8,font:{size:11}}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fm(c.parsed.y)}`}}},scales:{x:{grid:{display:false}},y:{ticks:{callback:v=>fm(v)}}}}})}
+
+// ═══════════ NOTICIAS ═══════════
+let NF={cat:'Todas',q:''};
+function mercadoStrip(){
+  const M=D.mercado;if(!M)return '';
+  const d=n=>(M.dolares||[]).find(x=>x.nombre===n), mm=n=>(M.macro||[]).find(x=>x.nombre===n)||{};
+  const it=[];
+  [['Oficial','Dólar oficial'],['MEP','Dólar MEP'],['Contado con liquidación','Dólar CCL'],['Blue','Dólar blue']].forEach(([n,l])=>{const x=d(n);if(x)it.push(kpi(l,'$ '+nf(x.venta),'Venta'))});
+  if(M.riesgo)it.push(kpi('Riesgo país',nf(M.riesgo.valor,0)+' pb','Dato al '+String(M.riesgo.fecha||'').slice(8,10)+'/'+String(M.riesgo.fecha||'').slice(5,7)));
+  [['S&P 500','S&P 500',0],['Nasdaq Composite','Nasdaq',0],['Petróleo WTI','Petróleo WTI',2],['Oro','Oro (US$)',0]].forEach(([n,l,k])=>{const x=mm(n);if(x.valor!=null)it.push(kpi(l,nf(x.valor,k),`<span class="${cl(x.var)}">${fPct(x.var)}</span>`))});
+  return it.length?`<div class="mstrip">${it.join('')}</div><div class="note" style="margin:-8px 0 14px">Indicadores al ${esc(dmy(M.generado).slice(0,5)+' '+hhmm(M.generado))} h.</div>`:'';
+}
+function renderNoticias(){
+  const el=document.getElementById('noticias'), N=D.noticias||[];
+  const cats=['Todas',...['Mercados','Dólar','Economía','Empresas','Internacional'].filter(c=>N.some(n=>n.categoria===c))];
+  if(!cats.includes(NF.cat))NF.cat='Todas';
+  const q=NF.q.trim().toLowerCase();
+  const list=N.filter(n=>(NF.cat==='Todas'||n.categoria===NF.cat)&&(!q||(n.titulo+' '+n.resumen).toLowerCase().includes(q)));
+  const hoy=dKey(Date.now()),ayer=dKey(Date.now()-864e5);
+  const by=new Map();list.forEach(n=>{const k=n.fecha?dKey(n.fecha):'';if(!by.has(k))by.set(k,[]);by.get(k).push(n)});
+  const titDia=k=>k===hoy?'Hoy':k===ayer?'Ayer':k?(wd(Date.parse(k+'T12:00:00-03:00')).replace(/^./,c=>c.toUpperCase())+' '+k.slice(8,10)+'/'+k.slice(5,7)):'Sin fecha';
+  el.innerHTML=`<div class="card" style="margin-bottom:14px"><div class="ct">Mercado hoy</div>${mercadoStrip()||'<div class="note">Indicadores no disponibles por el momento.</div>'}</div>
+  <div class="nfil"><div class="chips" id="n-cat">${cats.map(c=>`<button type="button" class="chip ${c===NF.cat?'on':''}" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div><input type="search" id="n-q" placeholder="Buscar en titulares…" value="${esc(NF.q)}"></div>
+  ${list.length?[...by.entries()].map(([k,l])=>`<div class="nday">${esc(titDia(k))}</div>`+l.map(n=>`<article class="ncard"><div class="nmeta"><span class="ntag">${esc(n.categoria)}</span><span>${esc(n.fuente)}${n.fecha?' · '+esc(hhmm(n.fecha))+' h':''}</span></div>${n.link?`<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.titulo)}</a>`:`<b>${esc(n.titulo)}</b>`}${n.resumen?`<p>${esc(n.resumen)}</p>`:''}</article>`).join('')).join(''):'<div class="card note">No hay noticias para este filtro.</div>'}
+  <p class="note" style="margin-top:14px">Titulares de Ámbito, Infobae y El Cronista, actualizados automáticamente cada hora. Los enlaces abren la nota en el sitio de cada medio.</p>`;
+  el.querySelector('#n-cat').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;NF.cat=b.dataset.c;renderNoticias()};
+  const qi=el.querySelector('#n-q');qi.oninput=()=>{NF.q=qi.value;const pos=qi.selectionStart;renderNoticias();const n=document.getElementById('n-q');n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}};
+}
+
+// ═══════════ acceso ═══════════
+let SID=null, TOKEN=null, VER='', ES_CLIENTE=false, ES_ADMIN=false;
+try{SID=localStorage.getItem('lf-sid')}catch(e){}
+function setSid(v){SID=v;try{v?localStorage.setItem('lf-sid',v):localStorage.removeItem('lf-sid')}catch(e){}}
+function showLogin(msg){
+  document.body.classList.add('locked');const L=document.getElementById('login');L.hidden=false;
+  const b=document.getElementById('lbody');
+  if(!TOKEN){b.innerHTML=`<p>${esc(msg||'Acceso restringido.')}</p><p>Ingrese desde el enlace personal que le envió su asesor.</p>`;return}
+  b.innerHTML=`<p>${esc(msg||'Ingrese su clave de acceso de 6 dígitos.')}</p><form id="lform" autocomplete="off"><input id="lpin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" aria-label="Clave" required><div class="lerr" id="lerr"></div><button class="btn" type="submit" id="lbtn">Ingresar</button></form>`;
+  const f=document.getElementById('lform'),pin=document.getElementById('lpin');pin.focus();
+  f.onsubmit=e=>{e.preventDefault();const btn=document.getElementById('lbtn');btn.disabled=true;btn.textContent='Verificando…';document.getElementById('lerr').textContent='';
+    google.script.run.withSuccessHandler(r=>{setSid(r.sid);VER='';first=true;load()})
+      .withFailureHandler(er=>{btn.disabled=false;btn.textContent='Ingresar';document.getElementById('lerr').textContent=String(er&&er.message||er).replace(/^Error:\s*/,'');pin.select()})
+      .login(TOKEN,pin.value)};
+}
+function applyRole(){
+  const a=D.acceso||{rol:'admin'};
+  if(a.rol==='admin')ES_ADMIN=true;
+  ES_CLIENTE=a.rol==='cliente';
+  document.querySelectorAll('#mnav [data-admin]').forEach(b=>b.hidden=ES_CLIENTE);
+  document.getElementById('t-port').textContent=ES_CLIENTE?'Mi cartera':'Portfolio';
+  document.getElementById('lsub').textContent=ES_CLIENTE?'Portal de clientes':'Gestión de carteras';
+  const u=document.getElementById('b-user');u.hidden=!ES_CLIENTE||a.preview;u.textContent=a.nombre||'';
+  document.getElementById('salir').hidden=false;
+  if(ES_CLIENTE&&['alertas','informes'].includes(MAIN))MAIN='portfolio';
+  const sel=document.getElementById('ver');
+  if(ES_ADMIN){const cl=a.clientes||sel._clientes||[];sel._clientes=cl;
+    sel.innerHTML=`<option value="">Vista: administración</option>`+cl.map(n=>`<option value="${esc(n)}" ${n===VER?'selected':''}>Ver como: ${esc(n)}</option>`).join('');sel.hidden=false}
+  let pb=document.getElementById('pbar');
+  if(a.preview){if(!pb){pb=document.createElement('div');pb.id='pbar';pb.className='pbar';document.body.insertBefore(pb,document.querySelector('.header'))}
+    pb.innerHTML=`Vista previa: así ve el portal ${esc(a.nombre)}. <button type="button" id="pb-x">Volver a administración</button>`;pb.querySelector('#pb-x').onclick=()=>verComo('')}
+  else if(pb)pb.remove();
+}
+function verComo(n){VER=n;first=true;TAB='resumen';load()}
+document.getElementById('ver').onchange=e=>verComo(e.target.value);
+document.getElementById('salir').onclick=()=>{setSid(null);VER='';ES_ADMIN=false;const pb=document.getElementById('pbar');if(pb)pb.remove();showLogin('Sesión cerrada.')};
+
 // ═══════════ carga ═══════════
 function renderTop(){
   const m=D.meta, open=marketOpen();
@@ -759,12 +871,22 @@ function renderTop(){
 }
 let first=true;
 function load(){
-  google.script.run.withSuccessHandler(d=>{D=d;build();if(first){buildNav();buildInfNav();first=false}renderTop();goMain(MAIN)})
-    .withFailureHandler(e=>{document.getElementById('banner').innerHTML=`<div class="card" style="color:var(--red)">No se pudieron leer los datos: ${esc(e&&e.message||e)}. Si no dispone de acceso, solicítelo al administrador.</div>`})
-    .getData();
+  if(!SID){showLogin();return}
+  google.script.run.withSuccessHandler(d=>{D=d;document.body.classList.remove('locked');document.getElementById('login').hidden=true;
+      applyRole();build();if(first){buildNav();buildInfNav();first=false}renderTop();goMain(MAIN)})
+    .withFailureHandler(e=>{const m=String(e&&e.message||e);
+      if(/SESION/.test(m)){setSid(null);showLogin('Su sesión finalizó. Ingrese nuevamente su clave.');return}
+      document.getElementById('banner').innerHTML=`<div class="card" style="color:var(--red)">No se pudieron leer los datos: ${esc(m.replace(/^Error:\s*/,''))}.</div>`})
+    .datos(SID,VER||null);
 }
-load();
-setInterval(()=>{if(!document.hidden){const y=window.scrollY;load();setTimeout(()=>window.scrollTo({top:y}),400)}},5*60000);
+(function boot(){
+  const go=()=>load();
+  try{google.script.url.getLocation(loc=>{TOKEN=(loc&&loc.parameter&&loc.parameter.c)||null;
+    if(TOKEN&&SID){try{if(localStorage.getItem('lf-tok')!==TOKEN){setSid(null)}}catch(e){}}
+    try{TOKEN&&localStorage.setItem('lf-tok',TOKEN)}catch(e){}
+    go()})}catch(e){go()}
+})();
+setInterval(()=>{if(!document.hidden&&SID&&D){const y=window.scrollY;load();setTimeout(()=>window.scrollTo({top:y}),400)}},5*60000);
 </script>
 </body>
 </html>

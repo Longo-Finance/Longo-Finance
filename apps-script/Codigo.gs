@@ -7,7 +7,8 @@
  *   fuera de esas franjas no hace nada) y generarSemanal() lunes 8:00:
  *   arman los informes con datos públicos (Rava, TradingView, DolarApi, ArgentinaDatos), diarios y portales (Ámbito, Infobae,
  *   El Cronista, La Nación, CNBC, MarketWatch, Yahoo Finance, Google Noticias) y, si están configurados, X y la portada con Claude.
- * - doGet(): sirve la página web (Portfolio, Alertas e Informes).
+ * - doGet(): sirve la página web. Administración: Portfolio, Alertas, Informes y Noticias.
+ *   Clientes: su cartera y Noticias. Acceso con link personal + clave (pestaña Accesos).
  *
  * No envía mails. Instalación: menú Carteras → "Instalar automatizaciones" (una sola vez).
  */
@@ -30,6 +31,9 @@ function onOpen() {
     .addItem('Generar informe premarket', 'premarketAhora')
     .addItem('Generar informe postmarket', 'postmarketAhora')
     .addItem('Generar informe semanal', 'semanalAhora')
+    .addItem('Actualizar noticias', 'actualizarNoticiasAhora')
+    .addSeparator()
+    .addItem('Accesos de clientes', 'mostrarAccesos')
     .addSeparator()
     .addItem('Instalar automatizaciones', 'instalar')
     .addToUi();
@@ -40,9 +44,11 @@ function onOpen() {
 const VERSION_DISPARADORES = 3;
 
 function instalar() {
+  const ui = SpreadsheetApp.getUi();   // primero: si se llama desde la página, falla antes de tocar nada
   crearDisparadores_();
-  const r = [actualizarPrecios_(true), revisarAlertas_(), generarInforme_('premarket', true), generarInforme_('postmarket', true), generarInforme_('semanal', true)];
-  SpreadsheetApp.getUi().alert('Automatizaciones instaladas:\n· Precios cada 15 minutos en horario de mercado\n· Alertas de cheques 9:00 h\n· Informe premarket cada 30 min de 8:00 a 11:30 h y postmarket cada 30 min de 18:00 a 20:00 h (lunes a viernes)\n· Informe semanal los lunes 8:00 h\n\n' + r.join('\n'));
+  accesos_(SpreadsheetApp.getActive());
+  const r = [actualizarPrecios_(true), revisarAlertas_(), actualizarNoticias_(true), generarInforme_('premarket', true), generarInforme_('postmarket', true), generarInforme_('semanal', true)];
+  ui.alert('Automatizaciones instaladas:\n· Precios cada 15 minutos en horario de mercado\n· Alertas de cheques 9:00 h\n· Informe premarket cada 30 min de 8:00 a 11:30 h y postmarket cada 30 min de 18:00 a 20:00 h (lunes a viernes)\n· Informe semanal los lunes 8:00 h\n· Noticias cada hora\n· Links y claves de clientes: pestaña Accesos\n\n' + r.join('\n'));
 }
 function crearDisparadores_() {
   ScriptApp.getProjectTriggers().forEach(t => { if (HANDLERS.includes(t.getHandlerFunction())) ScriptApp.deleteTrigger(t); });
@@ -81,7 +87,14 @@ function cfg_(ss) { return ss.getSheetByName('Config'); }
 function estado_(ss, msg) { cfg_(ss).getRange(CFG.estado).setValue(Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ' · ' + msg); }
 
 // ================================================================ precios
-function actualizarPrecios() { sincronizarDisparadores_(); actualizarPrecios_(false); }   // la llama el disparador
+function esDisparador_(e) { return !!(e && e.triggerUid); }   // las llamadas desde la página no traen triggerUid
+function actualizarPrecios(e) {   // la llama el disparador
+  if (!esDisparador_(e)) return;
+  sincronizarDisparadores_();
+  try { accesos_(SpreadsheetApp.getActive()); } catch (x) {}
+  try { actualizarNoticias_(false); } catch (x) {}
+  actualizarPrecios_(false);
+}
 
 function enHorario_() {
   const now = new Date();
@@ -174,7 +187,7 @@ function agregarPosicionesNuevas_(ss) {
 }
 
 // ================================================================ alertas
-function revisarAlertas() { revisarAlertas_(); }   // la llama el disparador
+function revisarAlertas(e) { if (esDisparador_(e)) revisarAlertas_(); }
 
 function revisarAlertas_() {
   const ss = SpreadsheetApp.getActive();
@@ -264,9 +277,9 @@ function enVentana_(tipo) {
   const now = new Date(), min = +Utilities.formatDate(now, TZ, 'H') * 60 + +Utilities.formatDate(now, TZ, 'm');
   return diaHabil_() && min >= VENTANA[tipo][0] && min <= VENTANA[tipo][1];
 }
-function generarPremarket() { if (enVentana_('premarket')) generarInforme_('premarket', false); }
-function generarPostmarket() { if (enVentana_('postmarket')) generarInforme_('postmarket', false); }
-function generarSemanal() { generarInforme_('semanal', false); }
+function generarPremarket(e) { if (esDisparador_(e) && enVentana_('premarket')) generarInforme_('premarket', false); }
+function generarPostmarket(e) { if (esDisparador_(e) && enVentana_('postmarket')) generarInforme_('postmarket', false); }
+function generarSemanal(e) { if (esDisparador_(e)) generarInforme_('semanal', false); }
 function diaHabil_() { return +Utilities.formatDate(new Date(), TZ, 'u') <= 5; }
 
 function generarInforme_(tipo, manual) {
@@ -800,6 +813,188 @@ function informesParaWeb_(ss) {
   return out;
 }
 
+// ================================================================ accesos (portal de clientes)
+// La app web corre con la cuenta del dueño y es accesible sin cuenta de Google. Por eso NINGÚN dato sale
+// sin un link personal (token) y su clave, y las funciones de menú/disparadores rechazan llamadas desde la página.
+// Pestaña "Accesos": una fila por cliente (sus cuentas) y una de administración (todas las cuentas).
+
+const ACCESOS_HDR = ['Nombre', 'Rol', 'Cuentas', 'Token', 'Clave', 'Activo', 'Último ingreso', 'Link personal'];
+const SESION_SEG = 21600;          // 6 h
+const MAX_INTENTOS = 5;
+
+function nuevoToken_() { return (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 40); }
+function nuevaClave_() { return String(100000 + Math.floor(Math.random() * 900000)); }
+function urlApp_() { try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; } }
+
+function accesos_(ss) {
+  const sh = hoja_(ss, 'Accesos', ACCESOS_HDR);
+  if (sh.getLastRow() < 2) {   // primera vez: un acceso por cliente (según la pestaña Cuentas) y uno de administración
+    const K = ss.getSheetByName('Cuentas');
+    const ctas = K.getRange(2, 1, Math.max(K.getLastRow() - 1, 1), 2).getValues().filter(r => /^\d+$/.test(String(r[0])));
+    const porCliente = {};
+    ctas.forEach(r => { (porCliente[r[1]] = porCliente[r[1]] || []).push(String(r[0])); });
+    const filas = [['Administración', 'admin', 'todas', nuevoToken_(), nuevaClave_(), 'SI', '', '']]
+      .concat(Object.keys(porCliente).map(n => [n, 'cliente', porCliente[n].join(', '), nuevoToken_(), nuevaClave_(), 'SI', '', '']));
+    sh.getRange(2, 1, filas.length, ACCESOS_HDR.length).setValues(filas);
+  }
+  const url = urlApp_();
+  const v = sh.getRange(2, 1, sh.getLastRow() - 1, ACCESOS_HDR.length).getValues();
+  v.forEach((r, i) => {   // completa token/clave/link si alguien agregó un cliente a mano
+    let cambio = false;
+    if (r[0] && !r[3]) { r[3] = nuevoToken_(); cambio = true; }
+    if (r[0] && !String(r[4]).trim()) { r[4] = nuevaClave_(); cambio = true; }
+    if (r[0] && url && r[7] !== url + '?c=' + r[3]) { r[7] = url + '?c=' + r[3]; cambio = true; }
+    if (cambio) sh.getRange(i + 2, 1, 1, ACCESOS_HDR.length).setValues([r]);
+  });
+  return v.map((r, i) => ({ r, fila: i + 2 })).filter(x => x.r[0]).map(({ r, fila }) => ({ fila, nombre: String(r[0]), rol: String(r[1]).trim().toLowerCase() === 'admin' ? 'admin' : 'cliente',
+    cuentas: String(r[2]).split(/[,;\s]+/).filter(x => /^\d+$/.test(x)), token: String(r[3]), clave: String(r[4]).trim(),
+    activo: String(r[5]).trim().toUpperCase() !== 'NO' }));
+}
+
+// Llamada desde la página: valida link + clave y devuelve una sesión temporal.
+function login(token, clave) {
+  token = String(token || '').trim(); clave = String(clave || '').trim();
+  if (!/^[a-f0-9]{20,64}$/i.test(token)) throw new Error('Enlace de acceso inválido.');
+  const cache = CacheService.getScriptCache(), kf = 'f_' + token;
+  const fallos = Number(cache.get(kf) || 0);
+  if (fallos >= MAX_INTENTOS) throw new Error('Demasiados intentos fallidos. Vuelva a intentar en 15 minutos.');
+  const ss = SpreadsheetApp.getActive();
+  const a = accesos_(ss).find(x => x.token === token && x.activo);
+  if (!a || !clave || clave !== a.clave) {
+    cache.put(kf, String(fallos + 1), 900);
+    throw new Error(a ? 'Clave incorrecta.' : 'Enlace de acceso inválido o desactivado.');
+  }
+  cache.remove(kf);
+  const sid = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  cache.put('s_' + sid, token, SESION_SEG);
+  ss.getSheetByName('Accesos').getRange(a.fila, 7).setValue(new Date());
+  return { sid, nombre: a.nombre, rol: a.rol };
+}
+
+// Llamada desde la página: datos según la sesión. "ver" = nombre de cliente (solo administración, vista previa).
+function datos(sid, ver) {
+  const cache = CacheService.getScriptCache();
+  const token = sid && /^[a-f0-9]{40,80}$/i.test(String(sid)) ? cache.get('s_' + sid) : null;
+  if (!token) throw new Error('SESION');
+  const ss = SpreadsheetApp.getActive();
+  const lista = accesos_(ss);
+  const a = lista.find(x => x.token === token && x.activo);
+  if (!a) { cache.remove('s_' + sid); throw new Error('SESION'); }
+  cache.put('s_' + sid, token, SESION_SEG);   // renueva la sesión mientras se usa
+  try { actualizarNoticias_(false); } catch (e) { /* sin noticias nuevas */ }
+  const full = datosCompletos_(ss);
+  full.noticias = noticiasGuardadas_(ss);
+  full.mercado = mercadoPublico_(full.informes);
+  if (a.rol === 'admin' && !ver) {
+    full.historial = historialCuentas_(ss, null);
+    full.acceso = { rol: 'admin', nombre: a.nombre, clientes: lista.filter(x => x.rol === 'cliente').map(x => x.nombre) };
+    return full;
+  }
+  const destino = a.rol === 'admin' ? lista.find(x => x.rol === 'cliente' && x.nombre === ver) : a;
+  if (!destino) throw new Error('Cliente inexistente.');
+  return filtrarCliente_(ss, full, destino, a.rol === 'admin');
+}
+
+function filtrarCliente_(ss, full, c, preview) {
+  const ok = new Set(c.cuentas), tiene = x => ok.has(String(x.cuenta));
+  return {
+    meta: { actualizado: full.meta.actualizado, mep: full.meta.mep, mepNasini: full.meta.mepNasini, tenenciasAl: full.meta.tenenciasAl, diasProx: full.meta.diasProx, ahora: Date.now() },
+    lines: full.lines.filter(tiene), cuentas: full.cuentas.filter(tiene), cheques: full.cheques.filter(tiene),
+    alertas: full.alertas.filter(x => String(x.cuentas).split(/[,\s]+/).some(k => ok.has(k))),
+    movimientos: full.movimientos.filter(tiene),
+    informes: null, noticias: full.noticias, mercado: full.mercado, historial: historialCuentas_(ss, ok),
+    acceso: { rol: 'cliente', nombre: c.nombre, preview: !!preview },
+  };
+}
+
+function historialCuentas_(ss, ok) {
+  return historial_(ss).slice(0, 250).reverse().map(h => {
+    const cs = (h.cuentas || []).filter(x => !ok || ok.has(String(x.cuenta)));
+    return { fecha: h.fecha, cuentas: cs, cartera: cs.reduce((s, x) => s + (Number(x.cartera) || 0), 0), capital: cs.reduce((s, x) => s + (Number(x.capital) || 0), 0) };
+  }).filter(h => h.cuentas.length);
+}
+
+function mercadoPublico_(inf) {
+  const src = inf && (inf.postmarket && (!inf.premarket || inf.postmarket.generado >= inf.premarket.generado) ? inf.postmarket : inf.premarket);
+  if (!src) return null;
+  const dol = src.rueda ? src.rueda.dolares : src.argentina ? src.argentina.dolares : [];
+  const rp = src.rueda ? src.rueda.riesgo : src.argentina ? src.argentina.riesgo : null;
+  return { generado: src.generado, dolares: dol || [], riesgo: rp, macro: (src.macro || []).filter(x => ['eeuu', 'riesgo', 'commodities'].includes(x.grupo)) };
+}
+
+// Muestra los accesos (menú de la planilla).
+function mostrarAccesos() {
+  const ui = SpreadsheetApp.getUi();
+  const a = accesos_(SpreadsheetApp.getActive());
+  ui.alert('Accesos', 'Los links personales y las claves están en la pestaña "Accesos".\n\n' +
+    a.map(x => '· ' + x.nombre + ' (' + (x.rol === 'admin' ? 'todas las cuentas' : x.cuentas.join(', ')) + ')' + (x.activo ? '' : ' — DESACTIVADO')).join('\n') +
+    '\n\nPara cambiar una clave, borrala y volvé a abrir este menú: se genera una nueva. Para revocar un link, borrá el token. Para desactivar, poné NO en Activo.', ui.ButtonSet.OK);
+}
+
+// ================================================================ noticias generales
+const NOTICIAS_FEEDS = [
+  ['Ámbito', 'https://www.ambito.com/rss/pages/finanzas.xml'],
+  ['Ámbito', 'https://www.ambito.com/rss/pages/economia.xml'],
+  ['Infobae', 'https://www.infobae.com/arc/outboundfeeds/rss/category/economia/'],
+  ['El Cronista', 'https://www.cronista.com/arc/outboundfeeds/rss/?outputType=xml'],
+];
+const CATEGORIAS = [
+  ['Dólar', ['dólar', 'dolar', 'tipo de cambio', 'bcra', 'reservas', 'cepo', 'blue', 'mep', 'ccl', 'devaluación']],
+  ['Mercados', ['bonos', 'acciones', 'merval', 'riesgo país', 'riesgo pais', 'adr', 'wall street', 'cedear', 'bolsa', 'byma', 'caución', 'licitación', 'letras', 'obligaciones negociables', 'inversores', 's&p']],
+  ['Internacional', ['ee.uu', 'estados unidos', 'china', 'fed ', 'reserva federal', 'trump', 'europa', 'brasil', 'mundial', 'global']],
+  ['Empresas', ['empresa', 'compañía', 'balance', 'ganancias', 'inversión', 'ypf', 'galicia', 'pampa', 'mercadolibre', 'vaca muerta', 'industria']],
+  ['Economía', ['inflación', 'actividad', 'impuesto', 'gobierno', 'fmi', 'salario', 'consumo', 'déficit', 'recaudación', 'economía', 'caputo', 'milei']],
+];
+function categoria_(t) {
+  t = t.toLowerCase();
+  for (const [c, ps] of CATEGORIAS) if (ps.some(p => t.includes(p))) return c;
+  return 'Economía';
+}
+function actualizarNoticias_(forzar) {
+  const props = PropertiesService.getScriptProperties();
+  const ult = Number(props.getProperty('noticiasTs') || 0);
+  if (!forzar && Date.now() - ult < 55 * 60000) return 'Noticias al día.';
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return 'Actualización de noticias en curso.';
+  try {
+    const desde = Date.now() - 4 * 86400000, items = [], vistos = new Set();
+    NOTICIAS_FEEDS.forEach(([fuente, url]) => {
+      try {
+        const r = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (r.getResponseCode() !== 200) return;
+        (r.getContentText().match(/<item>[\s\S]*?<\/item>/g) || []).forEach(it => {
+          const g = tag => { const m = it.match(new RegExp('<' + tag + '>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</' + tag + '>')); return m ? m[1].trim() : ''; };
+          const limpia = s => s.replace(/<[^>]+>/g, ' ').replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCharCode(parseInt(h, 16))).replace(/&#(\d+);/g, (m, d) => String.fromCharCode(+d))
+            .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+          const titulo = limpia(g('title')), link = g('link'), fecha = Date.parse(g('pubDate'));
+          if (!titulo || !/^https:\/\//.test(link) || !(fecha >= desde)) return;
+          if (/cronista\.com\//i.test(link) && !/cronista\.com\/(economia-politica|finanzas-mercados|negocios)\//i.test(link)) return;   // solo secciones argentinas
+          const key = titulo.toLowerCase().replace(/[^a-z0-9áéíóúñ]/g, '').slice(0, 60);
+          if (vistos.has(key)) return; vistos.add(key);
+          let resumen = limpia(g('description'));
+          if (resumen.length > 240) resumen = resumen.slice(0, 237).replace(/\s+\S*$/, '') + '…';
+          items.push([new Date(fecha), fuente, categoria_(titulo + ' ' + resumen), titulo, link, resumen]);
+        });
+      } catch (e) { /* una fuente caída no frena el resto */ }
+    });
+    if (!items.length) return 'Sin noticias nuevas (fuentes no disponibles).';
+    items.sort((a, b) => b[0] - a[0]);
+    const sh = hoja_(SpreadsheetApp.getActive(), 'Noticias', ['Fecha', 'Fuente', 'Categoría', 'Título', 'Link', 'Resumen']);
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 6).clearContent();
+    const top = items.slice(0, 90);
+    sh.getRange(2, 1, top.length, 6).setValues(top);
+    props.setProperty('noticiasTs', String(Date.now()));
+    return 'Noticias actualizadas: ' + top.length + '.';
+  } finally { lock.releaseLock(); }
+}
+function noticiasGuardadas_(ss) {
+  const sh = ss.getSheetByName('Noticias');
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, Math.min(sh.getLastRow() - 1, 90), 6).getValues().filter(r => r[3]).map(r => ({
+    fecha: r[0] instanceof Date ? r[0].getTime() : null, fuente: r[1], categoria: r[2], titulo: r[3], link: /^https:\/\//.test(r[4]) ? r[4] : '', resumen: r[5] }));
+}
+function actualizarNoticiasAhora() { const ui = SpreadsheetApp.getUi(); ui.alert(actualizarNoticias_(true)); }
+
 // ================================================================ página web
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
@@ -808,8 +1003,8 @@ function doGet() {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);   // permite insertarla en Google Sites
 }
 
-// Todo lo que muestra la página, en una sola llamada (las fechas van como milisegundos).
-function getData() {
+// Todo lo que muestra la página (uso interno: la página accede con datos(sesión)). Fechas en milisegundos.
+function datosCompletos_() {
   const ss = SpreadsheetApp.getActive();
   const C = cfg_(ss);
   const ms = d => d instanceof Date ? d.getTime() : null;

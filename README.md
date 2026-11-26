@@ -4,6 +4,17 @@ Página web de carteras (Portfolio, Alertas e Informes) servida por Google Apps 
 "Carteras en vivo". Cada cambio que se sube a `main` dentro de `apps-script/` se publica solo en la misma
 implementación, así que el link no cambia.
 
+## Accesos (portal de clientes)
+La app web se ejecuta con la cuenta del dueño y no muestra ningún dato sin **link personal + clave**.
+La pestaña **Accesos** de la planilla (se crea sola) tiene una fila por cliente con sus cuentas y una de
+**Administración** (todas las cuentas, Alertas, Informes y "Ver como cliente").
+- Link personal: columna *Link personal*. Clave: columna *Clave* (6 dígitos).
+- Cambiar una clave: borrarla; en el próximo ciclo (≤15 min) o con *Carteras → Accesos de clientes* se genera otra.
+- Revocar un link: borrar el *Token* (se genera uno nuevo y el anterior deja de funcionar).
+- Desactivar un acceso: poner `NO` en *Activo*.
+- Agregar otro administrador o cliente: nueva fila con Nombre, Rol (`admin`/`cliente`) y Cuentas (separadas por coma).
+- 5 claves erróneas seguidas bloquean ese link 15 minutos. Las sesiones duran 6 horas desde el último uso.
+
 ## Estructura
 - `apps-script/Codigo.gs` — precios (Rava), alertas de cheques, informes premarket, postmarket y semanal, y datos para la página.
 - `apps-script/Index.html` — la página.
