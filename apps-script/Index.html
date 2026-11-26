@@ -174,6 +174,9 @@ tr.click{cursor:pointer}
 .np-post p{font-size:13.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .np-pimg{width:100%;max-height:200px;object-fit:cover;border-radius:6px}
 .np-post footer{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:auto}
+.np-imp{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:9px;border:1px solid currentColor}
+.np-imp:not(.neg):not(.neu){color:var(--muted)}
+tr.np-alta td{background:color-mix(in srgb,var(--red) 6%,transparent)}
 .np-post footer a{margin-left:auto;color:var(--accent);text-decoration:none;font-weight:500}
 @media(max-width:800px){.np-front,.np-lead{grid-template-columns:1fr}.np-side{border-left:0;padding-left:0}.np-col{padding:12px 0 0;border-left:0;border-top:1px solid var(--border)}.np-col:first-child{border-top:0}}
 @media(max-width:600px){.np-name{font-size:32px}.np-h1{font-size:25px}.np-deck{font-size:16px}.np-lead h4{font-size:21px}.np-ed{justify-content:center}}
@@ -592,10 +595,10 @@ const SECC={argentina:'Argentina',mundo:'Mundo',cartera:'Empresas en cartera'};
 const href=u=>/^https:\/\//.test(u||'')?esc(u):'#';
 const imgTag=(u,cls='')=>/^https:\/\//.test(u||'')?`<img class="${cls}" src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:'';
 const cuando=f=>f?(dKey(f)===dKey(Date.now())?hhmm(f)+' h':dmy(f).slice(0,5)+' '+hhmm(f)):'';
-function mastHead(nombre,inf,edicion){
+function mastHead(nombre,inf,edicion,franja){
   return `<header class="np-mast"><div class="np-top"><span>Longo Finance · Informe de mercado</span><span class="ractions"><button type="button" class="btn" onclick="window.print()">Imprimir / PDF</button></span></div>
     <h2 class="np-name">${nombre}</h2>
-    <div class="np-ed"><span>${esc(fechaLarga(inf.fecha))}</span><span>${edicion}</span><span>${inf.generado?'Edición de las '+hhmm(inf.generado)+' h':''}</span></div></header>`;
+    <div class="np-ed"><span>${esc(fechaLarga(inf.fecha))}</span><span>${edicion}</span><span>${inf.generado?'Edición de las '+hhmm(inf.generado)+' h':''}${franja?' · '+franja:''}</span></div></header>`;
 }
 function tickerBand(mac,nombres,extra){
   const r=nombres.map(n=>(mac||[]).find(x=>x.nombre===n)).filter(x=>x&&x.valor!=null).map(x=>[CORTO[x.nombre]||x.nombre,vnum(x.valor,x.valor>1000?0:2),x.var]);
@@ -623,6 +626,14 @@ function diario(n){
   return `<article class="np-lead">${lead.imagen?`<a class="np-img" href="${href(lead.link)}" target="_blank" rel="noopener" tabindex="-1">${imgTag(lead.imagen)}</a>`:''}
       <div><div class="np-kick">${SECC[lead.seccion]||'Mercados'}</div><h4><a href="${href(lead.link)}" target="_blank" rel="noopener">${esc(lead.titulo)}</a></h4>${lead.resumen?`<p>${esc(lead.resumen)}</p>`:''}${meta(lead)}</div></article>
     ${cols.length?`<div class="np-cols">${cols.map(([s,l])=>`<div class="np-col"><div class="np-colh">${SECC[s]}</div>${l.map((x,i)=>item(x,i===0)).join('')}</div>`).join('')}</div>`:''}`;
+}
+// Calendario económico: hora argentina, país, evento, importancia, estimado y dato anterior.
+function calendarioTabla(c){
+  if(c==null)return '<p class="note">Calendario no disponible en este informe.</p>';
+  if(!c.length)return '<p class="note">Sin publicaciones de impacto alto o medio previstas. Los eventos locales (licitaciones, INDEC, BCRA) se cargan en la pestaña Agenda de la planilla.</p>';
+  const IMP={alta:['Alta','neg'],media:['Media','neu'],feriado:['Feriado','']};
+  return tbl([['Hora','l'],['País','l'],['Evento','l'],['Impacto','l'],['Estimado'],['Anterior']],c.map(e=>{const[l,k]=IMP[e.impacto]||['—',''];
+    return `<tr${e.impacto==='alta'?' class="np-alta"':''}><td class="l mono">${esc(e.hora||'—')}</td><td class="l">${esc(e.pais)}</td><td class="l desc">${esc(e.evento)}</td><td class="l"><span class="np-imp ${k}">${l}</span></td><td class="mono">${esc(e.estimado||'—')}</td><td class="mono">${esc(e.anterior||'—')}</td></tr>`}));
 }
 function enX(x){
   if(x==null)return '<p class="note">Sección sin configurar: para sumar los posteos de las cuentas seguidas en X, cargue la propiedad <b>X_BEARER_TOKEN</b> en el proyecto de Apps Script (ver README).</p>';
@@ -666,18 +677,18 @@ function renderPre(p){
   const ced=p.cedears||[];
   PENDING.push(()=>{const c=ced.filter(x=>x.impacto!=null).slice(0,14).sort((a,b)=>a.impacto-b.impacto);chart('pre-ced',hbar(c.map(x=>x.ticker),c.map(x=>x.impacto),fA))});
   const extra=[ar.riesgo?['Riesgo país',nf(ar.riesgo.valor,0)+' pb',null]:null,mep?['MEP','$ '+nf(mep.venta),null]:null,ar.merval?['Merval',nf(ar.merval.valor,0),ar.merval.var]:null].filter(Boolean);
-  return `<article class="report np">${mastHead('El Premarket',p,'Antes de la apertura de BYMA')}
+  return `<article class="report np">${mastHead('El Premarket',p,'Antes de la apertura de BYMA','se actualiza de 8:00 a 11:30 h')}
   ${tickerBand(p.macro,['Futuro S&P 500','Futuro Nasdaq 100','Futuro Dow Jones','VIX (volatilidad)','Bono del Tesoro EE.UU. 10 años (%)','Índice dólar (DXY)','Petróleo Brent','Oro','Bitcoin'],extra)}
   ${portada(p.editorial,auto,'pre-mapa',(p.macro||[]).filter(x=>['futuros','global','commodities'].includes(x.grupo)||x.nombre==='Índice dólar (DXY)'))}
-  ${sec(1,'Noticias del día',diario(p.noticias))}
-  ${sec(2,'Lo que se dice en X',enX(p.x))}
-  ${sec(3,'Mercados internacionales',`<div class="grid2"><div>${macroTabla(p.macro,['futuros','riesgo'])}</div><div>${macroTabla(p.macro,['eeuu','commodities','global'])}</div></div>`)}
-  ${sec(4,'Argentina al cierre anterior',`<div class="kpis">${kpi('Riesgo país',ar.riesgo?nf(ar.riesgo.valor,0)+' pb':'—',ar.riesgo?'Dato al '+fCorta(ar.riesgo.fecha):'')}${kpi('S&P Merval',ar.merval?nf(ar.merval.valor,0):'—',ar.merval?`<span class="${vcls(ar.merval.var)}">${pc(ar.merval.var)}</span>`:'Sin dato intradiario')}${kpi('Dólar MEP',mep?'$ '+nf(mep.venta):'—','Venta')}${kpi('Contado con liquidación',ccl?'$ '+nf(ccl.venta):'—','Venta')}</div><div class="grid2"><div>${tendencia('pre-tend',p.serie)||'<p class="note">El gráfico de tendencia aparece cuando hay al menos dos cierres registrados.</p>'}</div><div>${dolaresTabla(ar.dolares)}</div></div>`)}
-  ${sec(5,'ADRs argentinos en Nueva York',`<div class="grid2"><div><div class="rsub">Premarket (o último cierre si no operan)</div>${adrsChart('pre-adr',p.adrs,'pre')}</div><div>${tbl([['Ticker','l'],['Cierre US$'],['Var. cierre'],['Premarket'],['Var. BYMA']],(p.adrs||[]).map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span></td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.pre)}"><b>${pc(a.pre)}</b></td><td class="mono ${vcls(a.local)}">${pc(a.local)}</td></tr>`))}</div></div>`,'Premarket: variación respecto del cierre anterior en la sesión previa a la apertura de Nueva York.')}
-  ${sec(6,'CEDEARs en cartera: subyacentes en premarket',`<div class="grid2"><div class="chart tall"><canvas id="pre-ced"></canvas></div><div>${tbl([['CEDEAR','l'],['Exposición'],['Premarket'],['Impacto est.']],ced.map(c=>`<tr><td class="l"><span class="tk">${esc(c.ticker)}</span> <span class="hint">${esc(c.cuentas.join(', '))}</span></td><td class="mono">${fA(c.valor)}</td><td class="mono ${vcls(c.pre)}">${pc(c.pre)}</td><td class="mono ${vcls(c.impacto)}">${c.impacto==null?'—':sgnA(c.impacto)}</td></tr>`).concat([`<tr class="sub"><td class="l">Total</td><td class="mono">${fA(im.exposicion)}</td><td class="mono ${vcls(im.pct)}">${pc(im.pct)}</td><td class="mono ${vcls(im.total)}">${sgnA(im.total)}</td></tr>`]))}</div></div>`,'Impacto estimado = exposición en pesos × variación premarket del subyacente. Cálculo propio; no incluye la variación del CCL.')}
-  ${sec(7,'Cartera al último cierre',carteraTabla(p.cartera,false))}
+  ${sec(1,'Calendario económico del día',calendarioTabla(p.calendario),'Horario de Argentina. Fuente: Forex Factory (EE.UU., zona euro, China, Reino Unido y Japón; impacto alto y medio) y eventos locales cargados en la pestaña Agenda.')}
+  ${sec(2,'Noticias del día',diario(p.noticias))}
+  ${sec(3,'Lo que se dice en X',enX(p.x))}
+  ${sec(4,'Mercados internacionales',`<div class="grid2"><div>${macroTabla(p.macro,['futuros','riesgo'])}</div><div>${macroTabla(p.macro,['eeuu','commodities','global'])}</div></div>`)}
+  ${sec(5,'Argentina al cierre anterior',`<div class="kpis">${kpi('Riesgo país',ar.riesgo?nf(ar.riesgo.valor,0)+' pb':'—',ar.riesgo?'Dato al '+fCorta(ar.riesgo.fecha):'')}${kpi('S&P Merval',ar.merval?nf(ar.merval.valor,0):'—',ar.merval?`<span class="${vcls(ar.merval.var)}">${pc(ar.merval.var)}</span>`:'Sin dato intradiario')}${kpi('Dólar MEP',mep?'$ '+nf(mep.venta):'—','Venta')}${kpi('Contado con liquidación',ccl?'$ '+nf(ccl.venta):'—','Venta')}</div><div class="grid2"><div>${tendencia('pre-tend',p.serie)||'<p class="note">El gráfico de tendencia aparece cuando hay al menos dos cierres registrados.</p>'}</div><div>${dolaresTabla(ar.dolares)}</div></div>`)}
+  ${sec(6,'ADRs argentinos en Nueva York',`<div class="grid2"><div><div class="rsub">Premarket (o último cierre si no operan)</div>${adrsChart('pre-adr',p.adrs,'pre')}</div><div>${tbl([['Ticker','l'],['Cierre US$'],['Var. cierre'],['Premarket'],['Var. BYMA']],(p.adrs||[]).map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span></td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.pre)}"><b>${pc(a.pre)}</b></td><td class="mono ${vcls(a.local)}">${pc(a.local)}</td></tr>`))}</div></div>`,'Premarket: variación respecto del cierre anterior en la sesión previa a la apertura de Nueva York.')}
+  ${sec(7,'CEDEARs en cartera: subyacentes en premarket',`<div class="grid2"><div class="chart tall"><canvas id="pre-ced"></canvas></div><div>${tbl([['CEDEAR','l'],['Exposición'],['Premarket'],['Impacto est.']],ced.map(c=>`<tr><td class="l"><span class="tk">${esc(c.ticker)}</span> <span class="hint">${esc(c.cuentas.join(', '))}</span></td><td class="mono">${fA(c.valor)}</td><td class="mono ${vcls(c.pre)}">${pc(c.pre)}</td><td class="mono ${vcls(c.impacto)}">${c.impacto==null?'—':sgnA(c.impacto)}</td></tr>`).concat([`<tr class="sub"><td class="l">Total</td><td class="mono">${fA(im.exposicion)}</td><td class="mono ${vcls(im.pct)}">${pc(im.pct)}</td><td class="mono ${vcls(im.total)}">${sgnA(im.total)}</td></tr>`]))}</div></div>`,'Impacto estimado = exposición en pesos × variación premarket del subyacente. Cálculo propio; no incluye la variación del CCL.')}
   ${sec(8,'Agenda del día',agendaBloque(p.agenda,'Acreditación de cheques'))}
-  ${repFoot(p,'Los datos internacionales corresponden al momento de generación del informe. Los valores de la cartera corresponden al último cierre disponible. Las noticias se seleccionan automáticamente por palabras clave y tenencias; los resúmenes son los que publica cada medio.')}</article>`;
+  ${repFoot(p,'Los datos internacionales corresponden al momento de generación del informe. Las tenencias de la cartera corresponden al último cierre disponible (el detalle está en Portfolio → Resumen). Las noticias se seleccionan automáticamente por palabras clave y tenencias; los resúmenes son los que publica cada medio.')}</article>`;
 }
 
 function renderPost(p){
@@ -700,7 +711,7 @@ function renderPost(p){
   PENDING.push(()=>chart('post-cta',hbar(cu.map(c=>c.cuenta+' '+(ACC[c.cuenta]?ACC[c.cuenta].s:'')),cu.map(c=>c.varHoy),fA)));
   const extra=[r.merval?['Merval',nf(r.merval.valor,0),r.merval.var]:null,r.riesgo?['Riesgo país',nf(r.riesgo.valor,0)+' pb',null]:null,mep?['MEP','$ '+nf(mep.venta),null]:null].filter(Boolean);
   const ah=(p.afterHours||[]);
-  return `<article class="report np">${mastHead('El Cierre',p,'Resumen de la rueda')}
+  return `<article class="report np">${mastHead('El Cierre',p,'Resumen de la rueda','se actualiza de 18:00 a 20:00 h')}
   ${tickerBand(p.macro,['S&P 500','Nasdaq Composite','Dow Jones','VIX (volatilidad)','Bono del Tesoro EE.UU. 10 años (%)','Índice dólar (DXY)','Petróleo Brent','Oro','Bitcoin'],extra)}
   ${portada(p.editorial,auto,'post-mapa',(p.macro||[]).filter(x=>['eeuu','global','commodities'].includes(x.grupo)||x.nombre==='Índice dólar (DXY)'))}
   ${sec(1,'Resumen de la rueda',`<div class="kpis">${kpi('Cartera · var. del día',sgnA(t.varHoy),pc(t.varPct),vcls(t.varHoy))}${kpi('S&P Merval',r.merval?nf(r.merval.valor,0):'—',r.merval?`<span class="${vcls(r.merval.var)}">${pc(r.merval.var)}</span>`:'Sin dato intradiario')}${kpi('Riesgo país',r.riesgo?nf(r.riesgo.valor,0)+' pb':'—',r.riesgo?'Dato al '+fCorta(r.riesgo.fecha)+(dRP!=null?` · <span class="${vcls(-dRP)}">${dRP>0?'+':''}${nf(dRP,0)} pb</span>`:''):'')}${kpi('Dólar MEP',mep?'$ '+nf(mep.venta):'—','Venta')}${kpi('S&P 500',vnum(r.spx&&r.spx.valor,0),`<span class="${vcls(r.spx&&r.spx.var)}">${pc(r.spx&&r.spx.var)}</span>`)}${kpi('Nasdaq',vnum(r.ndx&&r.ndx.valor,0),`<span class="${vcls(r.ndx&&r.ndx.var)}">${pc(r.ndx&&r.ndx.var)}</span>`)}</div><div class="grid2"><div>${tendencia('post-tend',p.serie)||'<p class="note">El gráfico de tendencia aparece cuando hay al menos dos cierres registrados.</p>'}</div><div>${dolaresTabla(r.dolares)}</div></div>`)}
@@ -711,7 +722,8 @@ function renderPost(p){
   ${sec(6,'Renta fija',tbl([['Especie','l'],['Precio'],['Var. %'],['TIR'],['Duration'],['Paridad'],['Vencimiento','l'],['Tenencia']],(p.rentaFija||[]).map(x=>`<tr><td class="l"><span class="tk">${esc(x.ticker)}</span> <span class="hint">${esc(x.moneda)}</span></td><td class="mono">${vnum(x.precio)}</td><td class="mono ${vcls(x.var)}">${pc(x.var)}</td><td class="mono">${x.tir==null?'—':nf(x.tir,2)+'%'}</td><td class="mono">${vnum(x.dm)}</td><td class="mono">${x.paridad==null?'—':nf(x.paridad,1)+'%'}</td><td class="l">${esc(x.vto?fCorta(x.vto)+'/'+x.vto.slice(0,4):'')}</td><td class="mono">${fA(x.valor)}</td></tr>`)),'TIR, duration modificada y paridad según Rava Bursátil. Precios cada 100 nominales.')}
   ${sec(7,'Aforo de caución tomadora',`<div class="grid2">${(p.aforo||[]).map(a=>{const col=a.pct>90?'var(--red)':a.pct>=80?'var(--green)':'var(--yellow)';return `<div class="card"><div class="ct">Cuenta ${esc(a.cuenta)}</div><div class="gauge"><div class="gpct ${a.pct>90?'neg':a.pct>=80?'pos':''}">${nf(a.pct,1)}%</div><div style="width:100%"><div class="gbar"><div class="gfill" style="width:${Math.min(a.pct||0,100)}%;background:${col}"></div></div><div class="glab"><span>0%</span><span>Rango de referencia 80%–90%</span><span>100%</span></div></div><div class="note">Caución ${fA(a.caucion)} sobre bonos y letras por ${fA(a.bonos)}</div></div></div>`}).join('')}</div>`)}
   ${sec(8,'Mercados internacionales al cierre',`<div class="grid2"><div>${macroTabla(p.macro,['eeuu','riesgo'])}</div><div>${macroTabla(p.macro,['commodities','global'])}</div></div>`)}
-  ${sec(9,'Agenda próxima',agendaBloque(p.agenda,'Acreditación de cheques · próximos días hábiles'))}
+  ${sec(9,'Calendario económico'+(p.calendarioDia?' del '+esc(fechaLarga(p.calendarioDia).replace(/ de \d{4}$/,'')).toLowerCase():' del próximo día hábil'),calendarioTabla(p.calendario),'Horario de Argentina. Fuente: Forex Factory y eventos locales cargados en la pestaña Agenda.')}
+  ${sec(10,'Agenda próxima',agendaBloque(p.agenda,'Acreditación de cheques · próximos días hábiles'))}
   ${repFoot(p,'Variaciones de BYMA contra el cierre anterior (plazo 24 horas). Las especies sin operaciones en el día se valúan al último precio informado por Nasini. El detalle por especie y las contribuciones del día están en Portfolio → Resumen. Las noticias se seleccionan automáticamente; los resúmenes son los que publica cada medio.')}</article>`;
 }
 

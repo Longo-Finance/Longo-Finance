@@ -3,7 +3,8 @@
  *
  * - actualizarPrecios(): cada 15 min, lunes a viernes 10:30–18:15 (hora Argentina), trae precios de Rava.
  * - revisarAlertas(): todos los días a las 9, registra en la pestaña Alertas los cheques que se acreditan ese día.
- * - generarPremarket() 9:15, generarPostmarket() 18:30 (lunes a viernes) y generarSemanal() lunes 8:00:
+ * - generarPremarket() cada 30 min entre 8:00 y 11:30, generarPostmarket() cada 30 min entre 18:00 y 20:00 (lunes a viernes;
+ *   fuera de esas franjas no hace nada) y generarSemanal() lunes 8:00:
  *   arman los informes con datos públicos (Rava, TradingView, DolarApi, ArgentinaDatos), diarios y portales (Ámbito, Infobae,
  *   El Cronista, La Nación, CNBC, MarketWatch, Yahoo Finance, Google Noticias) y, si están configurados, X y la portada con Claude.
  * - doGet(): sirve la página web (Portfolio, Alertas e Informes).
@@ -38,11 +39,12 @@ function instalar() {
   ScriptApp.getProjectTriggers().forEach(t => { if (HANDLERS.includes(t.getHandlerFunction())) ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('actualizarPrecios').timeBased().everyMinutes(15).create();
   ScriptApp.newTrigger('revisarAlertas').timeBased().atHour(9).nearMinute(0).everyDays(1).inTimezone(TZ).create();
-  ScriptApp.newTrigger('generarPremarket').timeBased().atHour(9).nearMinute(15).everyDays(1).inTimezone(TZ).create();
-  ScriptApp.newTrigger('generarPostmarket').timeBased().atHour(18).nearMinute(30).everyDays(1).inTimezone(TZ).create();
+  ScriptApp.newTrigger('generarPremarket').timeBased().everyMinutes(30).create();    // solo actúa de 8:00 a 11:30
+  ScriptApp.newTrigger('generarPostmarket').timeBased().everyMinutes(30).create();   // solo actúa de 18:00 a 20:00
+  hoja_(SpreadsheetApp.getActive(), 'Agenda', ['Fecha', 'Hora', 'Evento', 'Importancia (Alta/Media)']);   // eventos locales del calendario
   ScriptApp.newTrigger('generarSemanal').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(8).nearMinute(0).inTimezone(TZ).create();
   const r = [actualizarPrecios_(true), revisarAlertas_(), generarInforme_('premarket', true), generarInforme_('postmarket', true), generarInforme_('semanal', true)];
-  SpreadsheetApp.getUi().alert('Automatizaciones instaladas:\n· Precios cada 15 minutos en horario de mercado\n· Alertas de cheques 9:00 h\n· Informe premarket 9:15 h y postmarket 18:30 h (lunes a viernes)\n· Informe semanal los lunes 8:00 h\n\n' + r.join('\n'));
+  SpreadsheetApp.getUi().alert('Automatizaciones instaladas:\n· Precios cada 15 minutos en horario de mercado\n· Alertas de cheques 9:00 h\n· Informe premarket cada 30 min de 8:00 a 11:30 h y postmarket cada 30 min de 18:00 a 20:00 h (lunes a viernes)\n· Informe semanal los lunes 8:00 h\n\n' + r.join('\n'));
 }
 
 function actualizarPreciosAhora() { SpreadsheetApp.getUi().alert(actualizarPrecios_(true)); }
@@ -227,8 +229,15 @@ const EMPRESAS = { GGAL: 'galicia', YPFD: 'ypf', PAMP: 'pampa', BMA: 'macro', SU
   MU: 'micron', TSM: 'tsmc', GOOGL: 'google', META: 'meta', NFLX: 'netflix', NKE: 'nike', MCD: "mcdonald", UBER: 'uber', IBM: 'ibm', AAL: 'american airlines',
   JD: 'jd.com', NU: 'nubank', SNDK: 'sandisk', WMT: 'walmart', MSFT: 'microsoft' };
 
-function generarPremarket() { if (diaHabil_()) generarInforme_('premarket', false); }
-function generarPostmarket() { if (diaHabil_()) generarInforme_('postmarket', false); }
+// Franjas de actualización automática (hora Argentina, lunes a viernes). Fuera de ellas el informe queda congelado
+// hasta el día siguiente; desde el menú de la planilla se puede regenerar a mano en cualquier momento.
+const VENTANA = { premarket: [8 * 60, 11 * 60 + 30], postmarket: [18 * 60, 20 * 60] };
+function enVentana_(tipo) {
+  const now = new Date(), min = +Utilities.formatDate(now, TZ, 'H') * 60 + +Utilities.formatDate(now, TZ, 'm');
+  return diaHabil_() && min >= VENTANA[tipo][0] && min <= VENTANA[tipo][1];
+}
+function generarPremarket() { if (enVentana_('premarket')) generarInforme_('premarket', false); }
+function generarPostmarket() { if (enVentana_('postmarket')) generarInforme_('postmarket', false); }
 function generarSemanal() { generarInforme_('semanal', false); }
 function diaHabil_() { return +Utilities.formatDate(new Date(), TZ, 'u') <= 5; }
 
@@ -497,6 +506,7 @@ function datosEditorial_(inf) {
       : { variacionDiaPct: pct, suben: (inf.suben || []).slice(0, 3).map(x => [x.ticker, r2(x.var)]), bajan: (inf.bajan || []).slice(0, 3).map(x => [x.ticker, r2(x.var)]),
         afterHours: (inf.afterHours || []).slice(0, 5).map(a => [a.ticker, r2(a.post)]) },
     balancesProximos: ((inf.agenda && inf.agenda.balances) || []).map(b => [b.ticker, b.fecha]),
+    calendarioEconomico: (inf.calendario || []).map(c => [c.dia, c.hora, c.pais, c.evento, c.impacto, c.estimado, c.anterior]),
     titulares: (inf.noticias || []).map(n => ({ seccion: n.seccion, fuente: n.fuente, titulo: n.titulo, resumen: n.resumen })),
     x: (inf.x || []).map(p => ({ cuenta: p.usuario, texto: p.texto })),
   };
@@ -516,6 +526,44 @@ function recortar_(inf) {
   while (largo() > 48000 && inf.x && inf.x.length > 3) inf.x.pop();
   return inf;
 }
+
+// Calendario económico: Forex Factory (semana en curso; EE.UU., zona euro, China, Reino Unido y Japón, impacto alto y medio)
+// más los eventos locales que se carguen en la pestaña "Agenda" (licitaciones, INDEC, BCRA, etc.).
+const FF_URL = 'https://nfs.faireconomy.media/ff_calendar_thisweek.json';
+const PAISES = { USD: 'EE.UU.', EUR: 'Zona euro', CNY: 'China', GBP: 'Reino Unido', JPY: 'Japón' };
+function calendario_(ss, desde, hasta) {
+  const cache = CacheService.getScriptCache();
+  let ev = null;
+  try { ev = JSON.parse(cache.get('ff_semana') || 'null'); } catch (e) { ev = null; }
+  if (!ev) {
+    try {
+      const r = UrlFetchApp.fetch(FF_URL, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (r.getResponseCode() === 200) {
+        ev = JSON.parse(r.getContentText()).filter(e => PAISES[e.country] && ['High', 'Medium', 'Holiday'].includes(e.impact))
+          .map(e => ({ evento: String(e.title || ''), pais: e.country, f: Date.parse(e.date), impacto: e.impact, estimado: e.forecast || '', anterior: e.previous || '' }))
+          .filter(e => e.evento && isFinite(e.f));
+        try { cache.put('ff_semana', JSON.stringify(ev), 3600); } catch (e) { /* sin cache */ }   // el sitio pide no consultarlo seguido
+      }
+    } catch (e) { ev = null; }
+  }
+  const k = d => Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
+  const out = (ev || []).filter(e => k(new Date(e.f)) >= desde && k(new Date(e.f)) <= hasta && (e.impacto !== 'Holiday' || e.pais === 'USD'))
+    .map(e => ({ dia: k(new Date(e.f)), hora: e.impacto === 'Holiday' ? '' : Utilities.formatDate(new Date(e.f), TZ, 'HH:mm'), pais: PAISES[e.pais],
+      evento: e.impacto === 'Holiday' ? 'Feriado: ' + e.evento : e.evento, impacto: e.impacto === 'High' ? 'alta' : e.impacto === 'Medium' ? 'media' : 'feriado',
+      estimado: e.estimado, anterior: e.anterior }));
+  const A = ss.getSheetByName('Agenda');
+  if (A && A.getLastRow() > 1) {
+    A.getRange(2, 1, A.getLastRow() - 1, 4).getValues().forEach(r => {
+      if (!(r[0] instanceof Date) || !r[2]) return;
+      const dia = k(r[0]); if (dia < desde || dia > hasta) return;
+      const hora = r[1] instanceof Date ? Utilities.formatDate(r[1], TZ, 'HH:mm') : String(r[1] || '').trim();
+      out.push({ dia, hora, pais: 'Argentina', evento: String(r[2]), impacto: /alta/i.test(r[3]) ? 'alta' : 'media', estimado: '', anterior: '' });
+    });
+  }
+  return out.sort((a, b) => (a.dia + (a.hora || '00:00')) < (b.dia + (b.hora || '00:00')) ? -1 : 1).slice(0, 40);
+}
+// Próximo día hábil (lunes a viernes), como clave yyyy-MM-dd.
+function proximoHabil_() { const d = +Utilities.formatDate(new Date(), TZ, 'u'); return hoyK_(d === 5 ? 3 : d === 6 ? 2 : 1); }
 
 // ---------------------------------------------------------------- datos propios
 function cartera_(ss) {
@@ -594,7 +642,7 @@ function armarPremarket_(ss) {
     tipo: 'premarket', fecha: hoyK_(), generado: Date.now(),
     macro: macro_(), adrs, cedears: cedears.slice(0, 25), impacto: { total: impactoTotal, exposicion: expCed, pct: expCed ? impactoTotal / expCed * 100 : null, cartera: car.total.cartera },
     argentina: { merval: rava.merval, riesgo: riesgoPais_(), dolares: dolares_(), mep: cfg_(ss).getRange(CFG.mepUsado).getValue() },
-    cartera: car,
+    calendario: calendario_(ss, hoyK_(), hoyK_()),
     agenda: { cheques: chequesEntre_(ss, hoyK_(), hoyK_()), balances: balances_(us, 7) },
     noticias: noticias_(20, 16, claves), x: posteosX_(claves), serie: serie_(historial_(ss)),
   };
@@ -631,6 +679,7 @@ function armarPostmarket_(ss) {
       us10: { valor: m('Bono del Tesoro EE.UU. 10 años (%)').valor, var: m('Bono del Tesoro EE.UU. 10 años (%)').var } },
     macro: mac, cartera: car, suben, bajan, adrs, rentaFija: rf, aforo: aforos_(ss, pos), afterHours: after,
     serie: serie_(hist, { fecha: hoyK_(), riesgo: rp ? rp.valor : null, merval: rava.merval ? rava.merval.valor : null, mep: mepHoy }),
+    calendario: calendario_(ss, proximoHabil_(), proximoHabil_()), calendarioDia: proximoHabil_(),
     agenda: { cheques: chequesEntre_(ss, hoyK_(1), hoyK_(4)), balances: balances_(us, 7) },
     noticias: noticias_(12, 16, claves), x: posteosX_(claves),
   };
