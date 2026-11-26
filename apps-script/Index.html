@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Longo Finance · Gestión de carteras</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 :root{--bg:#f6f8fb;--surface:#fff;--surface2:#f1f4f9;--border:#dce3ec;--accent:#1f4e8c;--header:#1f4e8c;--accent2:#5b84b8;--green:#1d7a52;--red:#c0392b;--yellow:#b7791f;--text:#1c2733;--muted:#6b7785;--shadow:0 1px 3px rgba(28,39,51,.06);color-scheme:light}
@@ -131,6 +131,53 @@ tr.click{cursor:pointer}
 .rfoot p{margin:0}
 .rempty{text-align:center;padding:40px 20px}
 .report .kpis{margin-bottom:12px}
+/* informes estilo diario */
+.np-mast{text-align:center;margin-bottom:4px}
+.np-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.np-name{font-family:'Source Serif 4',Georgia,serif;font-size:46px;font-weight:700;letter-spacing:-.02em;line-height:1.05;margin:8px 0 10px;color:var(--text)}
+.np-ed{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;border-top:1px solid var(--text);border-bottom:3px double var(--text);padding:6px 2px;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text)}
+.np-ticker{display:flex;gap:18px;overflow-x:auto;white-space:nowrap;font-size:12.5px;padding:9px 2px;border-bottom:1px solid var(--border);scrollbar-width:thin}
+.np-ticker b{font-weight:600;color:var(--muted)}
+.np-front{display:grid;grid-template-columns:1.55fr 1fr;gap:28px;padding:20px 0 18px;border-bottom:1px solid var(--border)}
+.np-side{border-left:1px solid var(--border);padding-left:24px}
+.np-kick{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:6px}
+.np-h1{font-family:'Source Serif 4',Georgia,serif;font-size:34px;line-height:1.12;font-weight:700;letter-spacing:-.01em;color:var(--text);margin-bottom:10px;text-wrap:balance}
+.np-deck{font-family:'Source Serif 4',Georgia,serif;font-size:18px;line-height:1.45;color:var(--muted);margin-bottom:12px}
+.np-lect{font-family:'Source Serif 4',Georgia,serif;font-size:15.5px;line-height:1.6;margin-bottom:12px;color:var(--text)}
+.np-lect::first-letter{font-size:2.6em;float:left;line-height:.9;margin:4px 6px 0 0;font-weight:700;color:var(--accent)}
+.np-claves .rsyn{font-size:13.5px}
+.np-lead{display:grid;grid-template-columns:1.1fr 1fr;gap:20px;align-items:start;padding-bottom:18px;border-bottom:1px solid var(--border)}
+.np-lead:not(:has(.np-img)){grid-template-columns:1fr}
+.np-lead h4{font-family:'Source Serif 4',Georgia,serif;font-size:26px;line-height:1.18;margin-bottom:8px}
+.np-lead p{font-family:'Source Serif 4',Georgia,serif;font-size:16px;line-height:1.55;color:var(--text);margin-bottom:8px}
+.np-img{display:block;border-radius:4px;overflow:hidden;background:var(--surface2)}
+.np-img img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+.np-img:empty{display:none}
+.np-lead h4 a,.np-item h4 a{color:var(--text);text-decoration:none}
+.np-lead h4 a:hover,.np-item h4 a:hover{color:var(--accent);text-decoration:underline}
+.np-src{display:block;font-size:11.5px;color:var(--muted)}
+.np-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:0;margin-top:14px}
+.np-col{padding:0 18px;border-left:1px solid var(--border)}
+.np-col:first-child{padding-left:0;border-left:0}
+.np-colh{font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--text);border-bottom:2px solid var(--text);padding-bottom:4px;margin-bottom:10px}
+.np-item{padding:0 0 12px;margin-bottom:12px;border-bottom:1px dotted var(--border)}
+.np-item:last-child{border-bottom:0;margin-bottom:0}
+.np-item .np-img{margin-bottom:8px}
+.np-item h4{font-family:'Source Serif 4',Georgia,serif;font-size:17px;line-height:1.25;margin-bottom:4px}
+.np-item p{font-size:13px;line-height:1.5;color:var(--muted);margin-bottom:4px}
+.np-x{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.np-post{border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--surface);display:flex;flex-direction:column;gap:8px}
+.np-post header{display:flex;gap:10px;align-items:center}
+.np-post header b{display:block;font-size:13px}
+.np-post header span{font-size:11.5px;color:var(--muted)}
+.np-av{width:36px;height:36px;border-radius:50%;object-fit:cover;flex:0 0 auto}
+.np-post p{font-size:13.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.np-pimg{width:100%;max-height:200px;object-fit:cover;border-radius:6px}
+.np-post footer{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:auto}
+.np-post footer a{margin-left:auto;color:var(--accent);text-decoration:none;font-weight:500}
+@media(max-width:800px){.np-front,.np-lead{grid-template-columns:1fr}.np-side{border-left:0;padding-left:0}.np-col{padding:12px 0 0;border-left:0;border-top:1px solid var(--border)}.np-col:first-child{border-top:0}}
+@media(max-width:600px){.np-name{font-size:32px}.np-h1{font-size:25px}.np-deck{font-size:16px}.np-lead h4{font-size:21px}.np-ed{justify-content:center}}
+@media print{.np-ticker{flex-wrap:wrap;white-space:normal}.np-front,.np-lead,.np-cols{break-inside:avoid-page}}
 @media(max-width:600px){.report{padding:18px 14px}.rhead h2{font-size:21px}.sub-nav{top:auto}}
 @media print{
   .header,.nav,.site-foot,.ractions,#banner{display:none!important}
@@ -167,7 +214,7 @@ tr.click{cursor:pointer}
 </main>
 <footer class="site-foot">
   <div><b>Longo Finance</b> · Julián Longoni · Agente Productor CNV · Matrícula N° 2936</div>
-  <div>La información publicada tiene carácter informativo y no constituye una recomendación de inversión. Cotizaciones con demora de hasta 20 minutos. Fuentes: BYMA vía Rava Bursátil, TradingView, DolarApi, ArgentinaDatos, Ámbito, Infobae y El Cronista. Tenencias según el Resumen de Posiciones de Nasini S.A. y movimientos registrados.</div>
+  <div>La información publicada tiene carácter informativo y no constituye una recomendación de inversión. Cotizaciones con demora de hasta 20 minutos. Fuentes: BYMA vía Rava Bursátil, TradingView, DolarApi, ArgentinaDatos, diarios y portales argentinos e internacionales (Ámbito, Infobae, El Cronista, La Nación, CNBC, MarketWatch, Yahoo Finance, Google Noticias) y, si está configurado, X. Tenencias según el Resumen de Posiciones de Nasini S.A. y movimientos registrados.</div>
 </footer>
 
 <script>
@@ -505,7 +552,8 @@ function repFoot(inf,nota){
 function macroTabla(mac,grupos){
   const G={eeuu:'Índices de EE.UU. (último cierre)',futuros:'Futuros de EE.UU.',riesgo:'Volatilidad, tasas y dólar global',commodities:'Commodities y cripto',global:'Europa y Asia'};
   return grupos.map(g=>{const r=mac.filter(x=>x.grupo===g);if(!r.length)return'';
-    return `<div class="rsub">${G[g]}</div>`+tbl([['Instrumento','l'],['Último'],['Var. %']],r.map(x=>`<tr><td class="l">${esc(x.nombre)}</td><td class="mono">${vnum(x.valor,x.valor>1000?0:2)}</td><td class="mono ${vcls(x.var)}">${pc(x.var)}</td></tr>`));}).join('');
+    const perf=r.some(x=>x.sem!=null||x.mes!=null);
+    return `<div class="rsub">${G[g]}</div>`+tbl([['Instrumento','l'],['Último'],['Día'],...(perf?[['Semana'],['Mes']]:[])],r.map(x=>`<tr><td class="l">${esc(x.nombre)}</td><td class="mono">${vnum(x.valor,x.valor>1000?0:2)}</td><td class="mono ${vcls(x.var)}">${pc(x.var)}</td>${perf?`<td class="mono ${vcls(x.sem)}">${pc(x.sem)}</td><td class="mono ${vcls(x.mes)}">${pc(x.mes)}</td>`:''}</tr>`));}).join('');
 }
 function dolaresTabla(d){
   return tbl([['Tipo de cambio','l'],['Compra'],['Venta'],['Actualización']],(d||[]).map(x=>`<tr><td class="l">${esc(x.nombre)}</td><td class="mono">${vnum(x.compra)}</td><td class="mono"><b>${vnum(x.venta)}</b></td><td class="mono">${x.hora?esc(dmy(Date.parse(x.hora)).slice(0,5)+' '+hhmm(Date.parse(x.hora))):'—'}</td></tr>`));
@@ -538,6 +586,68 @@ function renderInformes(){
 let PENDING=[];
 function drawInfCharts(){PENDING.forEach(f=>f());PENDING=[]}
 
+// ─── piezas estilo diario (premarket y postmarket) ───
+const CORTO={'Nasdaq Composite':'Nasdaq','Dow Jones':'Dow Jones','Futuro S&P 500':'Fut. S&P 500','Futuro Nasdaq 100':'Fut. Nasdaq','Futuro Dow Jones':'Fut. Dow','VIX (volatilidad)':'VIX','Bono del Tesoro EE.UU. 10 años (%)':'Tasa 10 años','Bono del Tesoro EE.UU. 2 años (%)':'Tasa 2 años','Índice dólar (DXY)':'DXY','Petróleo WTI':'WTI','Petróleo Brent':'Brent','DAX (Alemania)':'DAX','Euro Stoxx 50':'Euro Stoxx','FTSE 100 (Reino Unido)':'FTSE 100','Nikkei 225 (Japón)':'Nikkei','Hang Seng (Hong Kong)':'Hang Seng'};
+const SECC={argentina:'Argentina',mundo:'Mundo',cartera:'Empresas en cartera'};
+const href=u=>/^https:\/\//.test(u||'')?esc(u):'#';
+const imgTag=(u,cls='')=>/^https:\/\//.test(u||'')?`<img class="${cls}" src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`:'';
+const cuando=f=>f?(dKey(f)===dKey(Date.now())?hhmm(f)+' h':dmy(f).slice(0,5)+' '+hhmm(f)):'';
+function mastHead(nombre,inf,edicion){
+  return `<header class="np-mast"><div class="np-top"><span>Longo Finance · Informe de mercado</span><span class="ractions"><button type="button" class="btn" onclick="window.print()">Imprimir / PDF</button></span></div>
+    <h2 class="np-name">${nombre}</h2>
+    <div class="np-ed"><span>${esc(fechaLarga(inf.fecha))}</span><span>${edicion}</span><span>${inf.generado?'Edición de las '+hhmm(inf.generado)+' h':''}</span></div></header>`;
+}
+function tickerBand(mac,nombres,extra){
+  const r=nombres.map(n=>(mac||[]).find(x=>x.nombre===n)).filter(x=>x&&x.valor!=null).map(x=>[CORTO[x.nombre]||x.nombre,vnum(x.valor,x.valor>1000?0:2),x.var]);
+  return `<div class="np-ticker" role="list">${(extra||[]).concat(r).map(([l,v,c])=>`<span role="listitem"><b>${esc(l)}</b> <span class="mono">${v}</span>${c!=null?` <span class="mono ${vcls(c)}">${pc(c)}</span>`:''}</span>`).join('')}</div>`;
+}
+// Portada: titular, bajada, lectura y claves (de Claude si está configurado; si no, armadas con reglas) + mapa de mercados.
+function portada(ed,auto,mapaId,mapa){
+  const e=ed&&ed.titular?ed:auto, cl=(e.claves&&e.claves.length?e.claves:auto.claves)||[];
+  PENDING.push(()=>{const m=mapa.filter(x=>x.var!=null).sort((a,b)=>a.var-b.var);chart(mapaId,hbar(m.map(x=>CORTO[x.nombre]||x.nombre),m.map(x=>x.var),fPct))});
+  return `<section class="np-front"><div class="np-main"><div class="np-kick">Lo principal</div><h3 class="np-h1">${esc(e.titular)}</h3><p class="np-deck">${esc(e.bajada)}</p>
+    ${e.lectura?`<p class="np-lect">${esc(e.lectura)}</p>`:''}
+    <div class="np-claves"><div class="rsub">Claves del día</div><ul class="rsyn">${cl.map(s=>`<li>${esc(s)}</li>`).join('')}</ul></div>
+    ${ed&&ed.ia?'<p class="rnote">Portada redactada automáticamente con IA a partir de los datos y titulares de este informe.</p>':''}</div>
+    <aside class="np-side"><div class="rsub">Mapa de mercados · variación % del día</div><div class="chart tall"><canvas id="${mapaId}"></canvas></div></aside></section>`;
+}
+// Noticias: nota principal con imagen y tres columnas (Argentina, empresas en cartera, mundo).
+function diario(n){
+  n=(n||[]).map(x=>Object.assign({seccion:'argentina'},x));
+  if(!n.length)return '<p class="note">Sin titulares relevantes en el período.</p>';
+  const lead=n.find(x=>x.imagen&&x.resumen)||n.find(x=>x.resumen)||n[0], rest=n.filter(x=>x!==lead);
+  const meta=x=>`<span class="np-src">${esc(x.fuente||'')}${x.fecha?' · '+esc(cuando(x.fecha)):''}</span>`;
+  const item=(x,conImg)=>`<article class="np-item">${conImg&&x.imagen?`<a class="np-img" href="${href(x.link)}" target="_blank" rel="noopener" tabindex="-1">${imgTag(x.imagen)}</a>`:''}
+    <h4><a href="${href(x.link)}" target="_blank" rel="noopener">${esc(x.titulo)}</a></h4>${x.resumen?`<p>${esc(x.resumen)}</p>`:''}${meta(x)}</article>`;
+  const cols=['argentina','cartera','mundo'].map(s=>[s,rest.filter(x=>x.seccion===s)]).filter(([,l])=>l.length);
+  return `<article class="np-lead">${lead.imagen?`<a class="np-img" href="${href(lead.link)}" target="_blank" rel="noopener" tabindex="-1">${imgTag(lead.imagen)}</a>`:''}
+      <div><div class="np-kick">${SECC[lead.seccion]||'Mercados'}</div><h4><a href="${href(lead.link)}" target="_blank" rel="noopener">${esc(lead.titulo)}</a></h4>${lead.resumen?`<p>${esc(lead.resumen)}</p>`:''}${meta(lead)}</div></article>
+    ${cols.length?`<div class="np-cols">${cols.map(([s,l])=>`<div class="np-col"><div class="np-colh">${SECC[s]}</div>${l.map((x,i)=>item(x,i===0)).join('')}</div>`).join('')}</div>`:''}`;
+}
+function enX(x){
+  if(x==null)return '<p class="note">Sección sin configurar: para sumar los posteos de las cuentas seguidas en X, cargue la propiedad <b>X_BEARER_TOKEN</b> en el proyecto de Apps Script (ver README).</p>';
+  if(!x.length)return '<p class="note">Sin posteos destacados de las cuentas seguidas en las últimas horas.</p>';
+  return `<div class="np-x">${x.map(p=>`<article class="np-post"><header>${imgTag(p.avatar,'np-av')}<div><b>${esc(p.autor)}</b><span>@${esc(p.usuario)} · ${esc(cuando(p.fecha))}</span></div></header>
+    <p>${esc(p.texto)}</p>${p.imagen?imgTag(p.imagen,'np-pimg'):''}<footer><span>♥ ${nf(p.likes,0)}</span><span>↻ ${nf(p.rts,0)}</span><a href="${href(p.link)}" target="_blank" rel="noopener">Ver en X</a></footer></article>`).join('')}</div>`;
+}
+// Riesgo país y MEP de las últimas ruedas registradas.
+function tendencia(id,serie){
+  const s=(serie||[]).filter(x=>x.riesgo!=null||x.mep!=null);
+  if(s.length<2)return '';
+  PENDING.push(()=>chart(id,{type:'line',data:{labels:s.map(x=>fCorta(x.fecha)),datasets:[
+      {label:'Riesgo país (pb)',data:s.map(x=>x.riesgo),borderColor:css('--accent'),backgroundColor:'rgba(31,78,140,.08)',fill:true,tension:.25,pointRadius:2,yAxisID:'y'},
+      {label:'Dólar MEP ($)',data:s.map(x=>x.mep),borderColor:css('--yellow'),borderDash:[5,4],tension:.25,pointRadius:2,yAxisID:'y1'}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8,font:{size:11}}}},
+      scales:{x:{grid:{display:false}},y:{position:'left',ticks:{callback:v=>nf(v,0)}},y1:{position:'right',grid:{display:false},ticks:{callback:v=>'$'+nf(v,0)}}}}}));
+  return `<div class="rsub">Tendencia: últimas ${s.length} ruedas</div><div class="chart"><canvas id="${id}"></canvas></div>`;
+}
+function adrsChart(id,adrs,campo){
+  const a=(adrs||[]).map(x=>({t:x.ticker,v:x[campo]!=null?x[campo]:x.varCierre})).filter(x=>x.v!=null).sort((a,b)=>a.v-b.v);
+  if(!a.length)return '';
+  PENDING.push(()=>chart(id,hbar(a.map(x=>x.t),a.map(x=>x.v),fPct)));
+  return `<div class="chart tall"><canvas id="${id}"></canvas></div>`;
+}
+
 function renderPre(p){
   const m=n=>p.macro.find(x=>x.nombre===n)||{};
   const es=m('Futuro S&P 500'),nq=m('Futuro Nasdaq 100'),vix=m('VIX (volatilidad)'),t10=m('Bono del Tesoro EE.UU. 10 años (%)');
@@ -550,49 +660,59 @@ function renderPre(p){
     `Riesgo país: ${ar.riesgo?nf(ar.riesgo.valor,0)+' pb ('+fCorta(ar.riesgo.fecha)+')':'sin dato'}. Dólar MEP ${mep?'$ '+nf(mep.venta):'—'} y CCL ${ccl?'$ '+nf(ccl.venta):'—'}.`,
     p.agenda&&p.agenda.cheques&&p.agenda.cheques.length?`Hoy se acreditan ${p.agenda.cheques.length} cheques por $ ${nf(p.agenda.cheques.reduce((s,c)=>s+c.nominal,0))}.`:'Hoy no se registran acreditaciones de cheques.'
   ].filter(Boolean);
+  const dir=es.var==null?'':es.var>0.3?'en alza':es.var<-0.3?'en baja':'';
+  const auto={titular:dir?`Wall Street anticipa una apertura ${dir}`:'Futuros de Wall Street sin grandes cambios antes de la apertura',
+    bajada:`El futuro del S&P 500 marca ${pc(es.var)} y el del Nasdaq 100 ${pc(nq.var)}. Riesgo país en ${ar.riesgo?nf(ar.riesgo.valor,0)+' pb':'—'} y dólar MEP a ${mep?'$ '+nf(mep.venta):'—'}.`,claves:syn};
   const ced=p.cedears||[];
   PENDING.push(()=>{const c=ced.filter(x=>x.impacto!=null).slice(0,14).sort((a,b)=>a.impacto-b.impacto);chart('pre-ced',hbar(c.map(x=>x.ticker),c.map(x=>x.impacto),fA))});
-  return `<article class="report">${repHead('Informe Premarket',p,'corte previo a la apertura de BYMA')}
-  ${sec(1,'Síntesis',`<ul class="rsyn">${syn.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`)}
-  ${sec(2,'Mercados internacionales',`<div class="grid2"><div>${macroTabla(p.macro,['futuros','riesgo'])}</div><div>${macroTabla(p.macro,['eeuu','commodities','global'])}</div></div>`)}
-  ${sec(3,'Argentina al cierre anterior',`<div class="kpis">${kpi('Riesgo país',ar.riesgo?nf(ar.riesgo.valor,0)+' pb':'—',ar.riesgo?'Dato al '+fCorta(ar.riesgo.fecha):'')}${kpi('S&P Merval',ar.merval?nf(ar.merval.valor,0):'—',ar.merval?`<span class="${vcls(ar.merval.var)}">${pc(ar.merval.var)}</span>`:'Sin dato intradiario')}${kpi('Dólar MEP',mep?'$ '+nf(mep.venta):'—','Venta')}${kpi('Contado con liquidación',ccl?'$ '+nf(ccl.venta):'—','Venta')}</div>${dolaresTabla(ar.dolares)}`)}
-  ${sec(4,'ADRs argentinos en Nueva York',tbl([['Ticker','l'],['Empresa','l'],['Cierre US$'],['Var. cierre'],['Premarket'],['Var. BYMA']],(p.adrs||[]).map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span></td><td class="l desc">${esc(a.empresa||'')}</td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.pre)}"><b>${pc(a.pre)}</b></td><td class="mono ${vcls(a.local)}">${pc(a.local)}</td></tr>`)),'Premarket: variación respecto del cierre anterior en la sesión previa a la apertura de Nueva York.')}
-  ${sec(5,'CEDEARs en cartera: subyacentes en premarket',`<div class="grid2"><div class="chart tall"><canvas id="pre-ced"></canvas></div><div>${tbl([['CEDEAR','l'],['Exposición'],['Premarket'],['Impacto est.']],ced.map(c=>`<tr><td class="l"><span class="tk">${esc(c.ticker)}</span> <span class="hint">${esc(c.cuentas.join(', '))}</span></td><td class="mono">${fA(c.valor)}</td><td class="mono ${vcls(c.pre)}">${pc(c.pre)}</td><td class="mono ${vcls(c.impacto)}">${c.impacto==null?'—':sgnA(c.impacto)}</td></tr>`).concat([`<tr class="sub"><td class="l">Total</td><td class="mono">${fA(im.exposicion)}</td><td class="mono ${vcls(im.pct)}">${pc(im.pct)}</td><td class="mono ${vcls(im.total)}">${sgnA(im.total)}</td></tr>`]))}</div></div>`,'Impacto estimado = exposición en pesos × variación premarket del subyacente. Cálculo propio; no incluye la variación del CCL.')}
-  ${sec(6,'Cartera al último cierre',carteraTabla(p.cartera,false))}
-  ${sec(7,'Agenda del día',agendaBloque(p.agenda,'Acreditación de cheques'))}
-  ${sec(8,'Titulares',noticiasLista(p.noticias))}
-  ${repFoot(p,'Los datos internacionales corresponden al momento de generación del informe. Los valores de la cartera corresponden al último cierre disponible.')}</article>`;
+  const extra=[ar.riesgo?['Riesgo país',nf(ar.riesgo.valor,0)+' pb',null]:null,mep?['MEP','$ '+nf(mep.venta),null]:null,ar.merval?['Merval',nf(ar.merval.valor,0),ar.merval.var]:null].filter(Boolean);
+  return `<article class="report np">${mastHead('El Premarket',p,'Antes de la apertura de BYMA')}
+  ${tickerBand(p.macro,['Futuro S&P 500','Futuro Nasdaq 100','Futuro Dow Jones','VIX (volatilidad)','Bono del Tesoro EE.UU. 10 años (%)','Índice dólar (DXY)','Petróleo Brent','Oro','Bitcoin'],extra)}
+  ${portada(p.editorial,auto,'pre-mapa',(p.macro||[]).filter(x=>['futuros','global','commodities'].includes(x.grupo)||x.nombre==='Índice dólar (DXY)'))}
+  ${sec(1,'Noticias del día',diario(p.noticias))}
+  ${sec(2,'Lo que se dice en X',enX(p.x))}
+  ${sec(3,'Mercados internacionales',`<div class="grid2"><div>${macroTabla(p.macro,['futuros','riesgo'])}</div><div>${macroTabla(p.macro,['eeuu','commodities','global'])}</div></div>`)}
+  ${sec(4,'Argentina al cierre anterior',`<div class="kpis">${kpi('Riesgo país',ar.riesgo?nf(ar.riesgo.valor,0)+' pb':'—',ar.riesgo?'Dato al '+fCorta(ar.riesgo.fecha):'')}${kpi('S&P Merval',ar.merval?nf(ar.merval.valor,0):'—',ar.merval?`<span class="${vcls(ar.merval.var)}">${pc(ar.merval.var)}</span>`:'Sin dato intradiario')}${kpi('Dólar MEP',mep?'$ '+nf(mep.venta):'—','Venta')}${kpi('Contado con liquidación',ccl?'$ '+nf(ccl.venta):'—','Venta')}</div><div class="grid2"><div>${tendencia('pre-tend',p.serie)||'<p class="note">El gráfico de tendencia aparece cuando hay al menos dos cierres registrados.</p>'}</div><div>${dolaresTabla(ar.dolares)}</div></div>`)}
+  ${sec(5,'ADRs argentinos en Nueva York',`<div class="grid2"><div><div class="rsub">Premarket (o último cierre si no operan)</div>${adrsChart('pre-adr',p.adrs,'pre')}</div><div>${tbl([['Ticker','l'],['Cierre US$'],['Var. cierre'],['Premarket'],['Var. BYMA']],(p.adrs||[]).map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span></td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.pre)}"><b>${pc(a.pre)}</b></td><td class="mono ${vcls(a.local)}">${pc(a.local)}</td></tr>`))}</div></div>`,'Premarket: variación respecto del cierre anterior en la sesión previa a la apertura de Nueva York.')}
+  ${sec(6,'CEDEARs en cartera: subyacentes en premarket',`<div class="grid2"><div class="chart tall"><canvas id="pre-ced"></canvas></div><div>${tbl([['CEDEAR','l'],['Exposición'],['Premarket'],['Impacto est.']],ced.map(c=>`<tr><td class="l"><span class="tk">${esc(c.ticker)}</span> <span class="hint">${esc(c.cuentas.join(', '))}</span></td><td class="mono">${fA(c.valor)}</td><td class="mono ${vcls(c.pre)}">${pc(c.pre)}</td><td class="mono ${vcls(c.impacto)}">${c.impacto==null?'—':sgnA(c.impacto)}</td></tr>`).concat([`<tr class="sub"><td class="l">Total</td><td class="mono">${fA(im.exposicion)}</td><td class="mono ${vcls(im.pct)}">${pc(im.pct)}</td><td class="mono ${vcls(im.total)}">${sgnA(im.total)}</td></tr>`]))}</div></div>`,'Impacto estimado = exposición en pesos × variación premarket del subyacente. Cálculo propio; no incluye la variación del CCL.')}
+  ${sec(7,'Cartera al último cierre',carteraTabla(p.cartera,false))}
+  ${sec(8,'Agenda del día',agendaBloque(p.agenda,'Acreditación de cheques'))}
+  ${repFoot(p,'Los datos internacionales corresponden al momento de generación del informe. Los valores de la cartera corresponden al último cierre disponible. Las noticias se seleccionan automáticamente por palabras clave y tenencias; los resúmenes son los que publica cada medio.')}</article>`;
 }
 
 function renderPost(p){
   const r=p.rueda||{}, car=p.cartera, t=car.total;
   const mep=(r.dolares||[]).find(d=>d.nombre==='MEP');
   const top=(p.suben||[])[0], bot=(p.bajan||[])[0];
+  const dRP=r.riesgoAnterior&&r.riesgo?r.riesgo.valor-r.riesgoAnterior:null;
   const syn=[
     `Resultado de la cartera en el día: ${sgnA(t.varHoy)} (${pc(t.varPct)}).`,
     top?`Mayor aporte positivo: ${top.ticker} (${pc(top.var)}, ${sgnA(top.aporte)}).`:'',
     bot?`Mayor aporte negativo: ${bot.ticker} (${pc(bot.var)}, ${sgnA(bot.aporte)}).`:'',
     `S&P 500 ${pc(r.spx&&r.spx.var)}, Nasdaq ${pc(r.ndx&&r.ndx.var)}; tasa a 10 años ${vnum(r.us10&&r.us10.valor,3)}%.`,
-    `Riesgo país ${r.riesgo?nf(r.riesgo.valor,0)+' pb ('+fCorta(r.riesgo.fecha)+')':'sin dato'}${r.riesgoAnterior&&r.riesgo?' ('+(r.riesgo.valor-r.riesgoAnterior>0?'+':'')+nf(r.riesgo.valor-r.riesgoAnterior,0)+' pb)':''}; dólar MEP ${mep?'$ '+nf(mep.venta):'—'}.`,
+    `Riesgo país ${r.riesgo?nf(r.riesgo.valor,0)+' pb ('+fCorta(r.riesgo.fecha)+')':'sin dato'}${dRP!=null?' ('+(dRP>0?'+':'')+nf(dRP,0)+' pb)':''}; dólar MEP ${mep?'$ '+nf(mep.venta):'—'}.`,
     ...(p.aforo||[]).filter(a=>a.pct>90).map(a=>`Aforo de la cuenta ${a.cuenta}: ${nf(a.pct,1)}%, por encima del rango de referencia (80%–90%).`)
   ].filter(Boolean);
+  const mv=r.merval&&r.merval.var;
+  const auto={titular:mv!=null?`El Merval ${mv>=0?'sube':'cae'} ${nf(Math.abs(mv),2)}% y la cartera ${t.varHoy>=0?'gana':'pierde'} ${pc(Math.abs(t.varPct)).replace('+','')} en la rueda`:`La cartera ${t.varHoy>=0?'gana':'pierde'} ${pc(Math.abs(t.varPct)).replace('+','')} en la rueda`,
+    bajada:`S&P 500 ${pc(r.spx&&r.spx.var)} y Nasdaq ${pc(r.ndx&&r.ndx.var)} en Nueva York. Riesgo país en ${r.riesgo?nf(r.riesgo.valor,0)+' pb':'—'}${dRP!=null?' ('+(dRP>0?'+':'')+nf(dRP,0)+' pb)':''} y dólar MEP a ${mep?'$ '+nf(mep.venta):'—'}.`,claves:syn};
   const cu=car.cuentas.slice().sort((a,b)=>a.varHoy-b.varHoy);
-  const mv=[...(p.bajan||[]).slice().reverse(),...(p.suben||[]).slice().reverse()].sort((a,b)=>a.aporte-b.aporte);
-  PENDING.push(()=>{chart('post-cta',hbar(cu.map(c=>c.cuenta+' '+(ACC[c.cuenta]?ACC[c.cuenta].s:'')),cu.map(c=>c.varHoy),fA));chart('post-mov',hbar(mv.map(x=>x.ticker),mv.map(x=>x.aporte),fA))});
-  const rv=(p.rentaVariable||[]).slice().sort((a,b)=>Math.abs(b.var)-Math.abs(a.var)).slice(0,16).sort((a,b)=>b.var-a.var);
-  return `<article class="report">${repHead('Informe Postmarket',p,'cierre de la rueda')}
-  ${sec(1,'Síntesis',`<ul class="rsyn">${syn.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`)}
-  ${sec(2,'Resumen de la rueda',`<div class="kpis">${kpi('Cartera · var. del día',sgnA(t.varHoy),pc(t.varPct),vcls(t.varHoy))}${kpi('S&P 500',vnum(r.spx&&r.spx.valor,0),`<span class="${vcls(r.spx&&r.spx.var)}">${pc(r.spx&&r.spx.var)}</span>`)}${kpi('Nasdaq',vnum(r.ndx&&r.ndx.valor,0),`<span class="${vcls(r.ndx&&r.ndx.var)}">${pc(r.ndx&&r.ndx.var)}</span>`)}${kpi('Riesgo país',r.riesgo?nf(r.riesgo.valor,0)+' pb':'—',r.riesgo?'Dato al '+fCorta(r.riesgo.fecha):'')}${kpi('Dólar MEP',mep?'$ '+nf(mep.venta):'—','Venta')}${kpi('S&P Merval',r.merval?nf(r.merval.valor,0):'—',r.merval?`<span class="${vcls(r.merval.var)}">${pc(r.merval.var)}</span>`:'Sin dato intradiario')}</div>${dolaresTabla(r.dolares)}`)}
-  ${sec(3,'Resultado por cuenta',`<div class="grid2"><div>${carteraTabla(car,true)}</div><div class="chart"><canvas id="post-cta"></canvas></div></div>`)}
-  ${sec(4,'Principales contribuciones',`<div class="grid2"><div class="chart tall"><canvas id="post-mov"></canvas></div><div>${tbl([['Especie','l'],['Var. %'],['Aporte'],['Cuentas','l']],[...(p.suben||[]),...(p.bajan||[])].map(x=>`<tr><td class="l"><span class="tk">${esc(x.ticker)}</span></td><td class="mono ${vcls(x.var)}">${pc(x.var)}</td><td class="mono ${vcls(x.aporte)}">${sgnA(x.aporte)}</td><td class="l hint">${esc(x.cuentas.join(', '))}</td></tr>`))}</div></div>`,'Aporte = variación de precio del día × tenencia consolidada, en pesos.')}
-  ${sec(5,'Renta variable',tbl([['Especie','l'],['Descripción','l'],['Clase','l'],['Var. %'],['Aporte'],['Tenencia']],rv.map(x=>`<tr><td class="l"><span class="tk">${esc(x.ticker)}</span></td><td class="l desc">${esc(x.nombre)}</td><td class="l">${esc(x.clase)}</td><td class="mono ${vcls(x.var)}">${pc(x.var)}</td><td class="mono ${vcls(x.aporte)}">${sgnA(x.aporte)}</td><td class="mono">${fA(x.valor)}</td></tr>`)))}
+  PENDING.push(()=>chart('post-cta',hbar(cu.map(c=>c.cuenta+' '+(ACC[c.cuenta]?ACC[c.cuenta].s:'')),cu.map(c=>c.varHoy),fA)));
+  const extra=[r.merval?['Merval',nf(r.merval.valor,0),r.merval.var]:null,r.riesgo?['Riesgo país',nf(r.riesgo.valor,0)+' pb',null]:null,mep?['MEP','$ '+nf(mep.venta),null]:null].filter(Boolean);
+  const ah=(p.afterHours||[]);
+  return `<article class="report np">${mastHead('El Cierre',p,'Resumen de la rueda')}
+  ${tickerBand(p.macro,['S&P 500','Nasdaq Composite','Dow Jones','VIX (volatilidad)','Bono del Tesoro EE.UU. 10 años (%)','Índice dólar (DXY)','Petróleo Brent','Oro','Bitcoin'],extra)}
+  ${portada(p.editorial,auto,'post-mapa',(p.macro||[]).filter(x=>['eeuu','global','commodities'].includes(x.grupo)||x.nombre==='Índice dólar (DXY)'))}
+  ${sec(1,'Resumen de la rueda',`<div class="kpis">${kpi('Cartera · var. del día',sgnA(t.varHoy),pc(t.varPct),vcls(t.varHoy))}${kpi('S&P Merval',r.merval?nf(r.merval.valor,0):'—',r.merval?`<span class="${vcls(r.merval.var)}">${pc(r.merval.var)}</span>`:'Sin dato intradiario')}${kpi('Riesgo país',r.riesgo?nf(r.riesgo.valor,0)+' pb':'—',r.riesgo?'Dato al '+fCorta(r.riesgo.fecha)+(dRP!=null?` · <span class="${vcls(-dRP)}">${dRP>0?'+':''}${nf(dRP,0)} pb</span>`:''):'')}${kpi('Dólar MEP',mep?'$ '+nf(mep.venta):'—','Venta')}${kpi('S&P 500',vnum(r.spx&&r.spx.valor,0),`<span class="${vcls(r.spx&&r.spx.var)}">${pc(r.spx&&r.spx.var)}</span>`)}${kpi('Nasdaq',vnum(r.ndx&&r.ndx.valor,0),`<span class="${vcls(r.ndx&&r.ndx.var)}">${pc(r.ndx&&r.ndx.var)}</span>`)}</div><div class="grid2"><div>${tendencia('post-tend',p.serie)||'<p class="note">El gráfico de tendencia aparece cuando hay al menos dos cierres registrados.</p>'}</div><div>${dolaresTabla(r.dolares)}</div></div>`)}
+  ${sec(2,'Noticias del día',diario(p.noticias))}
+  ${sec(3,'Lo que se dice en X',enX(p.x))}
+  ${sec(4,'Resultado por cuenta',`<div class="grid2"><div>${carteraTabla(car,true)}</div><div class="chart"><canvas id="post-cta"></canvas></div></div>`)}
+  ${sec(5,'ADRs argentinos y operaciones fuera de horario',`<div class="grid2"><div><div class="rsub">ADRs en Nueva York · var. % al cierre</div>${adrsChart('post-adr',p.adrs,'varCierre')||'<p class="note">Sin datos de ADRs.</p>'}</div><div><div class="rsub">After-hours (CEDEARs en cartera y ADRs)</div>${tbl([['Ticker','l'],['Cierre US$'],['Var. cierre'],['After-hours']],ah.map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span>${a.cartera?' <span class="hint">en cartera</span>':''}</td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.post)}"><b>${pc(a.post)}</b></td></tr>`))}</div></div>`)}
   ${sec(6,'Renta fija',tbl([['Especie','l'],['Precio'],['Var. %'],['TIR'],['Duration'],['Paridad'],['Vencimiento','l'],['Tenencia']],(p.rentaFija||[]).map(x=>`<tr><td class="l"><span class="tk">${esc(x.ticker)}</span> <span class="hint">${esc(x.moneda)}</span></td><td class="mono">${vnum(x.precio)}</td><td class="mono ${vcls(x.var)}">${pc(x.var)}</td><td class="mono">${x.tir==null?'—':nf(x.tir,2)+'%'}</td><td class="mono">${vnum(x.dm)}</td><td class="mono">${x.paridad==null?'—':nf(x.paridad,1)+'%'}</td><td class="l">${esc(x.vto?fCorta(x.vto)+'/'+x.vto.slice(0,4):'')}</td><td class="mono">${fA(x.valor)}</td></tr>`)),'TIR, duration modificada y paridad según Rava Bursátil. Precios cada 100 nominales.')}
   ${sec(7,'Aforo de caución tomadora',`<div class="grid2">${(p.aforo||[]).map(a=>{const col=a.pct>90?'var(--red)':a.pct>=80?'var(--green)':'var(--yellow)';return `<div class="card"><div class="ct">Cuenta ${esc(a.cuenta)}</div><div class="gauge"><div class="gpct ${a.pct>90?'neg':a.pct>=80?'pos':''}">${nf(a.pct,1)}%</div><div style="width:100%"><div class="gbar"><div class="gfill" style="width:${Math.min(a.pct||0,100)}%;background:${col}"></div></div><div class="glab"><span>0%</span><span>Rango de referencia 80%–90%</span><span>100%</span></div></div><div class="note">Caución ${fA(a.caucion)} sobre bonos y letras por ${fA(a.bonos)}</div></div></div>`}).join('')}</div>`)}
-  ${sec(8,'Operaciones fuera de horario en Nueva York',tbl([['Ticker','l'],['Empresa','l'],['Cierre US$'],['Var. cierre'],['After-hours']],(p.afterHours||[]).map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span>${a.cartera?' <span class="hint">CEDEAR en cartera</span>':''}</td><td class="l desc">${esc(a.empresa||'')}</td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.post)}"><b>${pc(a.post)}</b></td></tr>`)))}
-  ${sec(9,'Mercados internacionales al cierre',`<div class="grid2"><div>${macroTabla(p.macro,['eeuu','riesgo'])}</div><div>${macroTabla(p.macro,['commodities','global'])}</div></div>`)}
-  ${sec(10,'Agenda próxima',agendaBloque(p.agenda,'Acreditación de cheques · próximos días hábiles'))}
-  ${sec(11,'Titulares',noticiasLista(p.noticias))}
-  ${repFoot(p,'Variaciones de BYMA contra el cierre anterior (plazo 24 horas). Las especies sin operaciones en el día se valúan al último precio informado por Nasini.')}</article>`;
+  ${sec(8,'Mercados internacionales al cierre',`<div class="grid2"><div>${macroTabla(p.macro,['eeuu','riesgo'])}</div><div>${macroTabla(p.macro,['commodities','global'])}</div></div>`)}
+  ${sec(9,'Agenda próxima',agendaBloque(p.agenda,'Acreditación de cheques · próximos días hábiles'))}
+  ${repFoot(p,'Variaciones de BYMA contra el cierre anterior (plazo 24 horas). Las especies sin operaciones en el día se valúan al último precio informado por Nasini. El detalle por especie y las contribuciones del día están en Portfolio → Resumen. Las noticias se seleccionan automáticamente; los resúmenes son los que publica cada medio.')}</article>`;
 }
 
 function renderSem(w,todas){

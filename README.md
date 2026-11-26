@@ -27,6 +27,18 @@ implementación, así que el link no cambia.
      - `DEPLOYMENT_ID`: Apps Script → Implementar → Gestionar implementaciones → ID de la implementación de la app web.
 4. GitHub → **Actions → Publicar en Apps Script → Run workflow** para probar.
 
+## Informes premarket y postmarket (estilo diario)
+Cada informe arma una portada (titular, bajada, claves del día y mapa de mercados), las noticias del día con resumen e imagen
+(Ámbito, Infobae, El Cronista, La Nación, CNBC, MarketWatch, Yahoo Finance y Google Noticias para las empresas en cartera),
+gráficos de ADRs y de tendencia de riesgo país y dólar MEP, y los datos de mercado y de la cartera.
+
+Dos agregados opcionales, que se activan en Apps Script → ⚙ Configuración del proyecto → **Propiedades de la secuencia de comandos**:
+- `ANTHROPIC_API_KEY`: la portada la redacta Claude a partir de los datos y titulares del informe (sin datos de clientes).
+  Sin la clave, la portada se arma con reglas fijas.
+- `X_BEARER_TOKEN`: suma la sección "Lo que se dice en X" con los posteos más relevantes de las cuentas seguidas
+  (requiere acceso a la API de X, que es pago). Las cuentas se cambian con la propiedad `X_CUENTAS`
+  (lista separada por comas, por ejemplo `BCRAoficial,LuisCaputoAR,WSJmarkets`).
+
 ## Notas
 - La planilla, los disparadores y los permisos de Google no se tocan con la publicación: solo cambia el código.
 - Si se agregan funciones nuevas con disparadores, volver a correr **Carteras → Instalar automatizaciones** desde la planilla.

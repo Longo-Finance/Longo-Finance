@@ -4,7 +4,8 @@
  * - actualizarPrecios(): cada 15 min, lunes a viernes 10:30–18:15 (hora Argentina), trae precios de Rava.
  * - revisarAlertas(): todos los días a las 9, registra en la pestaña Alertas los cheques que se acreditan ese día.
  * - generarPremarket() 9:15, generarPostmarket() 18:30 (lunes a viernes) y generarSemanal() lunes 8:00:
- *   arman los informes con datos públicos (Rava, TradingView, DolarApi, ArgentinaDatos, Ámbito, Infobae, El Cronista).
+ *   arman los informes con datos públicos (Rava, TradingView, DolarApi, ArgentinaDatos), diarios y portales (Ámbito, Infobae,
+ *   El Cronista, La Nación, CNBC, MarketWatch, Yahoo Finance, Google Noticias) y, si están configurados, X y la portada con Claude.
  * - doGet(): sirve la página web (Portfolio, Alertas e Informes).
  *
  * No envía mails. Instalación: menú Carteras → "Instalar automatizaciones" (una sola vez).
@@ -189,7 +190,8 @@ function pesos_(x) {
 }
 
 // ================================================================ informes (premarket, postmarket, semanal)
-// Se arman solo con datos públicos; no usan IA. Se guardan como JSON en la pestaña "Informes"
+// Se arman con datos públicos. La portada (titular, bajada, claves) puede redactarla Claude si existe la propiedad
+// ANTHROPIC_API_KEY; los posteos de X requieren X_BEARER_TOKEN. Sin esas propiedades todo sigue funcionando. Se guardan como JSON en la pestaña "Informes"
 // (premarket y postmarket se sobrescriben; los semanales se acumulan) y la página los muestra.
 
 const TV_SCAN = 'https://scanner.tradingview.com/global/scan';
@@ -203,13 +205,22 @@ const MACRO = [
   ['TVC:NI225', 'Nikkei 225 (Japón)', 'global'], ['TVC:HSI', 'Hang Seng (Hong Kong)', 'global'],
 ];
 const ADRS = ['GGAL', 'YPF', 'PAM', 'BMA', 'SUPV', 'TGS', 'CEPU', 'IRS', 'LOMA', 'BBAR', 'TEO', 'EDN', 'CRESY', 'VIST', 'MELI', 'GLOB'];
+// Diarios y portales: [fuente, url, sección]. Una fuente caída no frena el informe.
 const RSS = [
-  ['Ámbito', 'https://www.ambito.com/rss/pages/finanzas.xml'],
-  ['Infobae', 'https://www.infobae.com/arc/outboundfeeds/rss/category/economia/'],
-  ['El Cronista', 'https://www.cronista.com/arc/outboundfeeds/rss/?outputType=xml'],
+  ['Ámbito', 'https://www.ambito.com/rss/pages/finanzas.xml', 'argentina'],
+  ['Infobae', 'https://www.infobae.com/arc/outboundfeeds/rss/category/economia/', 'argentina'],
+  ['El Cronista', 'https://www.cronista.com/arc/outboundfeeds/rss/?outputType=xml', 'argentina'],
+  ['La Nación', 'https://www.lanacion.com.ar/arc/outboundfeeds/rss/category/economia/?outputType=xml', 'argentina'],
+  ['CNBC', 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258', 'mundo'],
+  ['MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories', 'mundo'],
+  ['Yahoo Finance', 'https://finance.yahoo.com/news/rssindex', 'mundo'],
 ];
 const PALABRAS = ['merval', 'riesgo país', 'riesgo pais', 'bonos', 'dólar', 'dolar', 'bcra', 'wall street', 'reserva federal', 'fed ', 'acciones',
-  'adr', 'inflación', 'licitación', 'tesoro', 'cedear', 'tasas', 'caución', 'mercados', 'byma', 'cnv', 'fmi', 'deuda'];
+  'adr', 'inflación', 'licitación', 'tesoro', 'cedear', 'tasas', 'caución', 'mercados', 'byma', 'cnv', 'fmi', 'deuda',
+  'stocks', 'treasury', 'yields', 's&p', 'nasdaq', 'dow ', 'inflation', 'earnings', 'oil', 'dollar', 'rates', 'powell', 'tariff', 'jobs report', 'argentina'];
+// Cuentas de X que se siguen si no se configura la propiedad X_CUENTAS (ver README).
+const X_CUENTAS = ['BCRAoficial', 'LuisCaputoAR', 'Ambitocom', 'cronistacom', 'infobae', 'WSJmarkets', 'federalreserve', 'DeItaone'];
+const IA_MODELO = 'claude-opus-5-5';
 const EMPRESAS = { GGAL: 'galicia', YPFD: 'ypf', PAMP: 'pampa', BMA: 'macro', SUPV: 'supervielle', TGSU2: 'transportadora de gas del sur',
   TGNO4: 'gas del norte', METR: 'metrogas', ECOG: 'ecogas', LOMA: 'loma negra', IRSA: 'irsa', ALUA: 'aluar', TXAR: 'ternium', BBAR: 'bbva',
   BYMA: 'byma', COME: 'comercial del plata', CEPU: 'central puerto', AGRO: 'agrometal', INVJ: 'juramento', MELI: 'mercadolibre', NVDA: 'nvidia',
@@ -226,7 +237,9 @@ function generarInforme_(tipo, manual) {
   try {
     if (tipo === 'postmarket') { actualizarPrecios_(true); SpreadsheetApp.flush(); }
     const inf = tipo === 'premarket' ? armarPremarket_(ss) : tipo === 'postmarket' ? armarPostmarket_(ss) : armarSemanal_(ss);
-    guardarInforme_(ss, tipo, inf);
+    if (tipo !== 'semanal') inf.editorial = editorialIA_(tipo, datosEditorial_(inf));
+    inf.fuentes = fuentes_(inf);
+    guardarInforme_(ss, tipo, recortar_(inf));
     if (tipo === 'postmarket') guardarHistorial_(ss, inf);
     const msg = 'Informe ' + tipo + ' generado (' + Utilities.formatDate(new Date(), TZ, 'dd/MM HH:mm') + ').';
     estado_(ss, msg);
@@ -310,8 +323,11 @@ function tvEEUU_(nombres) {
   return o;
 }
 function macro_() {
-  const m = tvScan_(MACRO.map(x => x[0]), ['close', 'change']);
-  return MACRO.map(([s, n, g]) => ({ nombre: n, grupo: g, valor: m[s] ? m[s].close : null, var: m[s] ? m[s].change : null }));
+  let m = tvScan_(MACRO.map(x => x[0]), ['close', 'change', 'Perf.W', 'Perf.1M']);
+  if (!Object.keys(m).length) m = tvScan_(MACRO.map(x => x[0]), ['close', 'change']);   // por si TradingView rechaza las columnas de rendimiento
+  const n_ = v => typeof v === 'number' && isFinite(v) ? v : null;
+  return MACRO.map(([s, n, g]) => ({ nombre: n, grupo: g, valor: m[s] ? m[s].close : null, var: m[s] ? m[s].change : null,
+    sem: m[s] ? n_(m[s]['Perf.W']) : null, mes: m[s] ? n_(m[s]['Perf.1M']) : null }));
 }
 function dolares_() {
   try {
@@ -348,29 +364,157 @@ function ravaBonos_() {
     return o;
   } catch (e) { return {}; }
 }
+// Texto plano a partir del HTML/entidades que traen los RSS y X.
+function texto_(s) {
+  return String(s || '').replace(/<!\[CDATA\[|\]\]>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'").replace(/&nbsp;/g, ' ').replace(/&#(\d+);/g, (m, n) => String.fromCharCode(+n)).replace(/&amp;/g, '&');
+}
+function plano_(html) { return texto_(texto_(html).replace(/<[^>]+>/g, ' ')).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(); }
+function corto_(s, n) { if (s.length <= n) return s; const c = s.slice(0, n); return c.slice(0, Math.max(c.lastIndexOf(' '), n - 30)).replace(/[,;:.\s]+$/, '') + '…'; }
+
+// Ítems de un RSS/Atom: título, link, fecha, resumen e imagen.
+function rssItems_(xml) {
+  return (xml.match(/<(item|entry)[\s>][\s\S]*?<\/(item|entry)>/g) || []).map(it => {
+    const g = tag => { const m = it.match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + tag + '>')); return m ? m[1].trim() : ''; };
+    const at = re => { const m = it.match(re); return m ? texto_(m[1]) : ''; };
+    const cuerpo = texto_(g('description') || g('content:encoded') || g('summary') || g('content'));
+    const im = cuerpo.match(/<img[^>]+src=["']([^"']+)["']/i);
+    let link = plano_(g('link')) || at(/<link[^>]*href="([^"]+)"/);
+    const imagen = at(/<media:content[^>]*url="([^"]+)"[^>]*(?:medium="image"|type="image)/) || at(/<media:content[^>]*url="([^"]+\.(?:jpe?g|png|webp)[^"]*)"/i)
+      || at(/<media:thumbnail[^>]*url="([^"]+)"/) || at(/<enclosure[^>]*url="([^"]+)"[^>]*type="image/) || (im ? im[1] : '');
+    return { titulo: plano_(g('title')), link, fecha: Date.parse(plano_(g('pubDate') || g('published') || g('updated') || g('dc:date'))),
+      resumen: plano_(cuerpo), imagen: /^https:\/\//.test(imagen) ? imagen : '', fuente: plano_(g('source')) };
+  });
+}
+
+// Titulares de diarios argentinos, portales internacionales y Google Noticias (empresas en cartera),
+// puntuados por palabras clave y tenencias. Devuelve como máximo `max`, repartidos entre secciones.
 function noticias_(horas, max, claves) {
-  const desde = Date.now() - horas * 3600000, out = [], vistos = new Set();
-  RSS.forEach(([fuente, url]) => {
+  const desde = Date.now() - horas * 3600000, vistos = new Set(), out = [];
+  const fuentes = RSS.slice();
+  if (claves.length) {
+    const q = '(' + claves.slice(0, 10).map(c => '"' + c + '"').join(' OR ') + ') when:' + Math.max(1, Math.ceil(horas / 24)) + 'd';
+    fuentes.push(['Google Noticias', 'https://news.google.com/rss/search?q=' + encodeURIComponent(q) + '&hl=es-419&gl=AR&ceid=AR:es-419', 'cartera']);
+  }
+  let resp = [];
+  try { resp = UrlFetchApp.fetchAll(fuentes.map(f => ({ url: f[1], muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } }))); } catch (e) { resp = []; }
+  fuentes.forEach(([fuente, url, seccion], i) => {
     try {
-      const r = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: { 'User-Agent': 'Mozilla/5.0' } });
-      if (r.getResponseCode() !== 200) return;
-      const xml = r.getContentText();
-      (xml.match(/<item>[\s\S]*?<\/item>/g) || []).forEach(it => {
-        const g = tag => { const m = it.match(new RegExp('<' + tag + '>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</' + tag + '>')); return m ? m[1].trim() : ''; };
-        const titulo = g('title').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'"), link = g('link'), fecha = Date.parse(g('pubDate'));
-        if (!titulo || !/^https:\/\//.test(link) || !(fecha >= desde)) return;
+      const r = resp[i];
+      if (!r || r.getResponseCode() !== 200) return;
+      rssItems_(r.getContentText()).forEach(x => {
+        let titulo = x.titulo, medio = fuente;
+        if (seccion === 'cartera') { const m = titulo.match(/^(.*)\s+-\s+([^-]{2,60})$/); if (m) { titulo = m[1]; medio = x.fuente || m[2]; } }
+        if (!titulo || !/^https:\/\//.test(x.link) || !(x.fecha >= desde)) return;
         const t = titulo.toLowerCase(), key = t.replace(/[^a-z0-9áéíóúñ]/g, '').slice(0, 60);
         if (vistos.has(key)) return;
-        let score = 0;
+        let score = seccion === 'cartera' ? 3 : 0;
         claves.forEach(c => { if (t.includes(c)) score += 3; });
         PALABRAS.forEach(p => { if (t.includes(p)) score += 1; });
         if (!score) return;
         vistos.add(key);
-        out.push({ titulo, link, fuente, fecha, score });
+        let resumen = x.resumen;
+        if (resumen.toLowerCase().startsWith(t.slice(0, 40)) || resumen.length < 25) resumen = '';   // Google Noticias repite el título
+        out.push({ titulo, link: x.link, fuente: medio, seccion, fecha: x.fecha, resumen: corto_(resumen, 260), imagen: x.imagen, score });
       });
     } catch (e) { /* una fuente caída no frena el informe */ }
   });
-  return out.sort((a, b) => b.score - a.score || b.fecha - a.fecha).slice(0, max).map(({ score, ...x }) => x);
+  out.sort((a, b) => b.score - a.score || b.fecha - a.fecha);
+  const tope = Math.ceil(max / 2), cuenta = {}, sel = [];
+  out.forEach(x => { if (sel.length < max && (cuenta[x.seccion] = (cuenta[x.seccion] || 0) + 1) <= tope) sel.push(x); });
+  return sel.map(({ score, ...x }) => x);
+}
+
+// Posteos recientes de X de las cuentas seguidas. Requiere la propiedad del script X_BEARER_TOKEN
+// (API de X). Sin token devuelve null y la página muestra cómo activarlo.
+function posteosX_(claves) {
+  const P = PropertiesService.getScriptProperties(), token = P.getProperty('X_BEARER_TOKEN');
+  if (!token) return null;
+  const cuentas = (P.getProperty('X_CUENTAS') || X_CUENTAS.join(',')).split(',').map(c => c.trim().replace(/^@/, '')).filter(Boolean).slice(0, 20);
+  const q = '(' + cuentas.map(c => 'from:' + c).join(' OR ') + ') -is:retweet -is:reply';
+  try {
+    const d = fetchJson_('https://api.x.com/2/tweets/search/recent?max_results=50&query=' + encodeURIComponent(q) +
+      '&tweet.fields=created_at,public_metrics,author_id&expansions=author_id,attachments.media_keys&user.fields=name,username,profile_image_url&media.fields=url,preview_image_url,type',
+      { headers: { Authorization: 'Bearer ' + token } });
+    const U = {}, M = {};
+    ((d.includes && d.includes.users) || []).forEach(u => U[u.id] = u);
+    ((d.includes && d.includes.media) || []).forEach(m => M[m.media_key] = m.url || m.preview_image_url || '');
+    const hace = Date.now() - 24 * 3600000;
+    return (d.data || []).map(t => {
+      const u = U[t.author_id] || {}, pm = t.public_metrics || {}, txt = texto_(t.text).replace(/\s*https:\/\/t\.co\/\w+$/, '');
+      const low = txt.toLowerCase(), fecha = Date.parse(t.created_at);
+      let score = (pm.like_count || 0) + 2 * (pm.retweet_count || 0);
+      claves.forEach(c => { if (low.includes(c)) score *= 1.5; });
+      const media = ((t.attachments && t.attachments.media_keys) || []).map(k => M[k]).find(x => /^https:\/\//.test(x || '')) || '';
+      return { texto: corto_(txt, 400), autor: u.name || '', usuario: u.username || '', avatar: /^https:\/\//.test(u.profile_image_url || '') ? u.profile_image_url : '',
+        fecha, likes: pm.like_count || 0, rts: pm.retweet_count || 0, imagen: media, link: 'https://x.com/' + (u.username || 'i') + '/status/' + t.id, score: fecha >= hace ? score : score / 4 };
+    }).sort((a, b) => b.score - a.score).slice(0, 8).map(({ score, ...x }) => x);
+  } catch (e) { return []; }
+}
+
+// Titular, bajada, claves y lectura del día redactados por Claude a partir de los datos del informe.
+// Opcional: requiere la propiedad del script ANTHROPIC_API_KEY. Ante cualquier error devuelve null
+// y la página arma la portada con reglas fijas.
+function editorialIA_(tipo, datos) {
+  const key = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_API_KEY');
+  if (!key) return null;
+  const momento = tipo === 'premarket' ? 'antes de la apertura de la rueda (qué mirar hoy)' : 'al cierre de la rueda (qué dejó el día y qué queda para mañana)';
+  const sistema = 'Sos el editor de un informe de mercado diario, estilo diario financiero, para un asesor que administra carteras en Argentina. ' +
+    'Escribís ' + momento + '. Usá exclusivamente los datos y titulares que se te pasan en JSON: no inventes cifras, hechos ni citas, ' +
+    'y si un dato falta no lo menciones. No des recomendaciones de compra o venta. Español rioplatense formal, frases cortas, cifras con coma decimal. ' +
+    'titular: hasta 90 caracteres, informativo, sin signos de exclamación. bajada: una o dos oraciones que amplíen el titular con cifras. ' +
+    'claves: entre 4 y 6 puntos breves (hasta 160 caracteres cada uno) que crucen mercados, noticias y la cartera. ' +
+    'lectura: un párrafo de 70 a 120 palabras con la interpretación del día.';
+  const schema = { type: 'object', additionalProperties: false, required: ['titular', 'bajada', 'claves', 'lectura'],
+    properties: { titular: { type: 'string' }, bajada: { type: 'string' }, claves: { type: 'array', items: { type: 'string' } }, lectura: { type: 'string' } } };
+  try {
+    const r = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { 'x-api-key': key, 'anthropic-version': '2026-10-21', 'anthropic-beta': 'server-side-fallback-2026-07-01' },
+      payload: JSON.stringify({ model: IA_MODELO, max_tokens: 4000, fallbacks: 'default', system: sistema,
+        output_config: { effort: 'low', format: { type: 'json_schema', schema } },
+        messages: [{ role: 'user', content: JSON.stringify(datos) }] }),
+    });
+    if (r.getResponseCode() !== 200) { console.warn('Claude respondió HTTP ' + r.getResponseCode() + ': ' + r.getContentText().slice(0, 300)); return null; }
+    const d = JSON.parse(r.getContentText());
+    if (d.stop_reason !== 'end_turn') { console.warn('Editorial no generada: stop_reason ' + d.stop_reason); return null; }
+    const e = JSON.parse((d.content || []).filter(c => c.type === 'text').map(c => c.text).join(''));
+    return { titular: String(e.titular).slice(0, 140), bajada: String(e.bajada).slice(0, 400), claves: (e.claves || []).slice(0, 6).map(x => String(x).slice(0, 220)),
+      lectura: String(e.lectura).slice(0, 1200), ia: true };
+  } catch (e) { console.warn('Editorial no generada: ' + e.message); return null; }
+}
+// Lo que se le pasa a Claude: cifras redondeadas y titulares, sin datos personales de los clientes.
+function datosEditorial_(inf) {
+  const r2 = v => typeof v === 'number' && isFinite(v) ? Math.round(v * 100) / 100 : null;
+  const pct = inf.cartera && inf.cartera.total ? r2(inf.cartera.total.varPct) : null;
+  return {
+    informe: inf.tipo, fecha: inf.fecha,
+    mercados: (inf.macro || []).map(m => [m.nombre, r2(m.valor), r2(m.var)]),
+    argentina: inf.tipo === 'premarket' ? { riesgoPais: inf.argentina.riesgo && inf.argentina.riesgo.valor, merval: inf.argentina.merval, dolares: (inf.argentina.dolares || []).map(d => [d.nombre, d.venta]) }
+      : { riesgoPais: inf.rueda.riesgo && inf.rueda.riesgo.valor, riesgoPaisAnterior: inf.rueda.riesgoAnterior, merval: inf.rueda.merval, dolares: (inf.rueda.dolares || []).map(d => [d.nombre, d.venta]) },
+    adrs: (inf.adrs || []).map(a => [a.ticker, r2(a.varCierre), r2(a.pre)]),
+    cartera: inf.tipo === 'premarket' ? { impactoCedearsPct: inf.impacto && r2(inf.impacto.pct), mayoresCedears: (inf.cedears || []).slice(0, 5).map(c => [c.ticker, r2(c.pre)]) }
+      : { variacionDiaPct: pct, suben: (inf.suben || []).slice(0, 3).map(x => [x.ticker, r2(x.var)]), bajan: (inf.bajan || []).slice(0, 3).map(x => [x.ticker, r2(x.var)]),
+        afterHours: (inf.afterHours || []).slice(0, 5).map(a => [a.ticker, r2(a.post)]) },
+    balancesProximos: ((inf.agenda && inf.agenda.balances) || []).map(b => [b.ticker, b.fecha]),
+    titulares: (inf.noticias || []).map(n => ({ seccion: n.seccion, fuente: n.fuente, titulo: n.titulo, resumen: n.resumen })),
+    x: (inf.x || []).map(p => ({ cuenta: p.usuario, texto: p.texto })),
+  };
+}
+// Riesgo país, Merval y MEP de las últimas ruedas registradas (más antigua primero), para los gráficos de tendencia.
+function serie_(hist, hoy) {
+  const s = hist.filter(h => !hoy || h.fecha < hoy.fecha).slice(0, 20).reverse()
+    .map(h => ({ fecha: h.fecha, riesgo: h.riesgo ? h.riesgo.valor : null, merval: h.merval ? h.merval.valor : null, mep: h.mep || null }));
+  if (hoy) s.push(hoy);
+  return s;
+}
+// Si el informe no entra en una celda, recorta lo menos importante.
+function recortar_(inf) {
+  const largo = () => JSON.stringify(inf).length;
+  while (largo() > 48000 && inf.noticias && inf.noticias.length > 6) inf.noticias.pop();
+  if (largo() > 48000 && inf.noticias) inf.noticias.forEach(n => { n.resumen = corto_(n.resumen || '', 120); n.imagen = ''; });
+  while (largo() > 48000 && inf.x && inf.x.length > 3) inf.x.pop();
+  return inf;
 }
 
 // ---------------------------------------------------------------- datos propios
@@ -422,7 +566,15 @@ function balances_(us, dias) {
 }
 function hoyK_(offsetDias) { return Utilities.formatDate(new Date(Date.now() + (offsetDias || 0) * 86400000), TZ, 'yyyy-MM-dd'); }
 function cedearsUS_(pos) { return [...new Set(pos.filter(p => p.clase === 'CEDEARs').map(p => p.ticker))]; }
-function fuentes_() { return ['BYMA vía Rava Bursátil', 'TradingView', 'DolarApi', 'ArgentinaDatos', 'Ámbito', 'Infobae', 'El Cronista', 'Resumen de Posiciones Nasini']; }
+function fuentes_(inf) {
+  const f = ['BYMA vía Rava Bursátil', 'TradingView', 'DolarApi', 'ArgentinaDatos'];
+  const medios = [...new Set(((inf && inf.noticias) || []).map(n => n.fuente))];
+  f.push(...(medios.length ? medios : ['Ámbito', 'Infobae', 'El Cronista']));
+  if (inf && inf.x && inf.x.length) f.push('X (ex Twitter)');
+  if (inf && inf.editorial && inf.editorial.ia) f.push('Portada redactada con Claude (Anthropic) sobre los datos del informe');
+  f.push('Resumen de Posiciones Nasini');
+  return f;
+}
 
 // ---------------------------------------------------------------- premarket
 function armarPremarket_(ss) {
@@ -437,14 +589,14 @@ function armarPremarket_(ss) {
   const expCed = cedears.reduce((s, c) => s + c.valor, 0);
   const adrs = ADRS.filter(t => us[t]).map(t => ({ ticker: t, empresa: us[t].description, cierre: us[t].close, varCierre: us[t].change,
     pre: typeof us[t].premarket_change === 'number' ? us[t].premarket_change : null, local: (rava.best[(t === 'YPF' ? 'YPFD' : t === 'PAM' ? 'PAMP' : t === 'TGS' ? 'TGSU2' : t === 'IRS' ? 'IRSA' : t === 'TEO' ? 'TECO2' : t === 'CRESY' ? 'CRES' : t) + '|ARS'] || {}).var }));
-  const car = cartera_(ss);
+  const car = cartera_(ss), claves = claves_(pos);
   return {
     tipo: 'premarket', fecha: hoyK_(), generado: Date.now(),
     macro: macro_(), adrs, cedears: cedears.slice(0, 25), impacto: { total: impactoTotal, exposicion: expCed, pct: expCed ? impactoTotal / expCed * 100 : null, cartera: car.total.cartera },
     argentina: { merval: rava.merval, riesgo: riesgoPais_(), dolares: dolares_(), mep: cfg_(ss).getRange(CFG.mepUsado).getValue() },
     cartera: car,
     agenda: { cheques: chequesEntre_(ss, hoyK_(), hoyK_()), balances: balances_(us, 7) },
-    noticias: noticias_(20, 8, claves_(pos)), fuentes: fuentes_(),
+    noticias: noticias_(20, 16, claves), x: posteosX_(claves), serie: serie_(historial_(ss)),
   };
 }
 
@@ -458,7 +610,6 @@ function armarPostmarket_(ss) {
   const contrib = conVar.map(e => ({ ticker: e.ticker, nombre: e.nombre, clase: e.clase, var: e.var, aporte: e.varHoy, valor: e.valor, cuentas: e.cuentas }));
   const suben = contrib.filter(x => x.aporte > 0).sort((a, b) => b.aporte - a.aporte).slice(0, 6);
   const bajan = contrib.filter(x => x.aporte < 0).sort((a, b) => a.aporte - b.aporte).slice(0, 6);
-  const rv = contrib.filter(x => ['Acciones', 'CEDEARs'].includes(x.clase)).sort((a, b) => b.var - a.var);
   const rf = esp.filter(e => CLASES_BONO.includes(e.clase)).map(e => { const sym = e.moneda === 'USD' ? (RAVA_USD[e.ticker] || e.ticker + 'D') : e.ticker;
     const b = bonosRef[sym] || bonosRef[e.ticker] || {};
     return { ticker: e.ticker, nombre: e.nombre, moneda: e.moneda, precio: e.precio, var: e.var, tir: isFinite(b.tir) ? b.tir : null, dm: isFinite(b.dm) ? b.dm : null,
@@ -468,16 +619,20 @@ function armarPostmarket_(ss) {
     .map(t => ({ ticker: t, empresa: us[t].description, cierre: us[t].close, varCierre: us[t].change, post: us[t].postmarket_change, cartera: ced.includes(t) }))
     .sort((a, b) => Math.abs(b.post) - Math.abs(a.post)).slice(0, 10);
   const dol = dolares_(), rp = riesgoPais_();
-  const hist = historial_(ss), prev = hist.find(h => h.fecha < hoyK_());
+  const hist = historial_(ss), prev = hist.find(h => h.fecha < hoyK_()), claves = claves_(pos);
+  const mepHoy = (dol.find(d => d.nombre === 'MEP') || {}).venta || cfg_(ss).getRange(CFG.mepUsado).getValue();
+  const adrs = ADRS.filter(t => us[t]).map(t => ({ ticker: t, empresa: us[t].description, cierre: us[t].close, varCierre: us[t].change,
+    post: typeof us[t].postmarket_change === 'number' ? us[t].postmarket_change : null }));
   return {
     tipo: 'postmarket', fecha: hoyK_(), generado: Date.now(),
     rueda: { merval: rava.merval, riesgo: rp, riesgoAnterior: prev && prev.riesgo ? prev.riesgo.valor : null, dolares: dol,
       spx: { valor: m('S&P 500').valor, var: m('S&P 500').var }, ndx: { valor: m('Nasdaq Composite').valor, var: m('Nasdaq Composite').var },
       dji: { valor: m('Dow Jones').valor, var: m('Dow Jones').var }, vix: { valor: m('VIX (volatilidad)').valor, var: m('VIX (volatilidad)').var },
       us10: { valor: m('Bono del Tesoro EE.UU. 10 años (%)').valor, var: m('Bono del Tesoro EE.UU. 10 años (%)').var } },
-    macro: mac, cartera: car, suben, bajan, rentaVariable: rv.slice(0, 40), rentaFija: rf, aforo: aforos_(ss, pos), afterHours: after,
+    macro: mac, cartera: car, suben, bajan, adrs, rentaFija: rf, aforo: aforos_(ss, pos), afterHours: after,
+    serie: serie_(hist, { fecha: hoyK_(), riesgo: rp ? rp.valor : null, merval: rava.merval ? rava.merval.valor : null, mep: mepHoy }),
     agenda: { cheques: chequesEntre_(ss, hoyK_(1), hoyK_(4)), balances: balances_(us, 7) },
-    noticias: noticias_(12, 8, claves_(pos)), fuentes: fuentes_(),
+    noticias: noticias_(12, 16, claves), x: posteosX_(claves),
   };
 }
 
@@ -518,7 +673,7 @@ function armarSemanal_(ss) {
     mercado: { inicio: ini && !usaNasini ? { riesgo: ini.riesgo, merval: ini.merval, mep: ini.mep, spx: ini.spx } : null, fin: fin ? { riesgo: fin.riesgo, merval: fin.merval, mep: fin.mep, spx: fin.spx } : null, serie },
     macro: macro_(),
     agenda: { cheques: chequesEntre_(ss, hoyK_(), hoyK_(6)), balances: balances_(us, 7) },
-    noticias: noticias_(72, 6, claves_(pos)), fuentes: fuentes_(),
+    noticias: noticias_(72, 8, claves_(pos)),
   };
 }
 
