@@ -14,11 +14,11 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Instalar clasp
         run: npm install -g @google/clasp@2.4.2
@@ -41,4 +41,6 @@ jobs:
           DEPLOYMENT_ID: ${{ vars.DEPLOYMENT_ID }}
         run: |
           test -n "$DEPLOYMENT_ID" || { echo "::error::Falta la variable DEPLOYMENT_ID"; exit 1; }
-          clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "$(git log -1 --pretty=%s | cut -c1-90)"
+          # Acepta el ID solo o el link completo de la app web (.../macros/s/<ID>/exec)
+          ID=$(printf '%s' "$DEPLOYMENT_ID" | sed -E 's#^.*/macros/s/([^/]+).*$#\1#' | tr -d '[:space:]')
+          clasp deploy --deploymentId "$ID" --description "$(git log -1 --pretty=%s | cut -c1-90)"
