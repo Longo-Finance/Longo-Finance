@@ -121,6 +121,15 @@ tr.click{cursor:pointer}
 .rsub{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px}
 .rsyn{margin:0;padding-left:20px;display:grid;gap:6px;font-size:14px}
 .rsyn li::marker{color:var(--accent)}
+.iol-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin:10px 0 6px}
+.iol-cols .rsyn{font-size:13px}
+.iol-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 14px;align-items:baseline;margin:2px 0 6px}
+.iol-head h4{font-size:16px;font-weight:700}.iol-head a{font-size:12px;color:var(--accent)}
+.iol-est{margin-top:18px;padding-top:14px;border-top:1px dashed var(--border)}
+.iol-enf{font-size:14px;line-height:1.55;margin:4px 0 10px}
+.iol-tags{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}.iol-tags span{background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;font-size:11.5px;color:var(--muted)}
+.iol-port .rtab td.l{white-space:normal}
+.iol-port .mix{font-size:12px;color:var(--muted);margin:-4px 0 6px}
 .rnote{font-size:11.5px;color:var(--muted);margin:8px 0 0;font-style:italic}
 .rtab td.desc{max-width:280px}
 .rnews{margin:0;padding-left:20px;display:grid;gap:8px}
@@ -702,6 +711,24 @@ function curvasBloque(p){
     ${lg.length?`<figure class="np-fig"><figcaption><b>Spread por legislación</b><span>TIR del Bonar menos la del Global del mismo año, en pb</span></figcaption>${tbl([['Vto.','l'],['Ley local'],['Ley NY'],['Spread']],lg.map(r=>`<tr><td class="l">${esc(r.anio)}</td><td class="mono">${esc(r.local)} ${nf(r.tirLocal,2)}%</td><td class="mono">${esc(r.ny)} ${nf(r.tirNy,2)}%</td><td class="mono"><b>${r.spread>0?'+':''}${nf(r.spread,0)} pb</b></td></tr>`))}</figure>`:''}</div>`;
 }
 
+// Research de Invertir Online: Noticias de Mercado del día y Portafolios sugeridos del mes, cruzados con la cartera.
+function iolBloque(io){
+  if(!io||(!io.diario&&!io.estrategia))return '<p class="note">El research de Invertir Online no estuvo disponible al generar este informe.</p>';
+  const d=io.diario,e=io.estrategia;
+  const punto=p=>{const t=esc(p.t),b=p.d?esc(p.d):'';return `<li>${b&&t.indexOf(b)>=0?t.replace(b,'<b>'+b+'</b>'):t}</li>`};
+  const ver=(u,l)=>`<a href="${href(u)}" target="_blank" rel="noopener">${l} ↗</a>`;
+  const dH=d?`<div class="iol-head"><h4>${esc(d.titulo)}</h4>${ver(d.link,'Informe completo')}</div>${d.resumen?`<p class="np-deck">${esc(d.resumen)}</p>`:''}
+    <div class="iol-cols">${d.secciones.map(s=>`<div><div class="np-colh">${esc(s.titulo)}</div><ul class="rsyn">${s.puntos.map(punto).join('')}</ul></div>`).join('')}</div>`:'<p class="note">Sin Noticias de Mercado de IOL disponibles.</p>';
+  const pt=x=>`<div class="iol-port"><div class="rsub">${esc(x.nombre)} · ${ver(x.link,'detalle')}</div>${x.mezcla?`<div class="mix">${esc(x.mezcla)}</div>`:''}
+    ${tbl([['Instrumento','l'],['Ticker','l'],['Peso'],['En cartera','l']],x.activos.map(a=>`<tr><td class="l">${esc(a.nombre)}</td><td class="l"><span class="tk">${esc(a.ticker)}</span></td><td class="mono">${nf(a.pct,0)}%</td><td class="l">${a.cuentas.length?'<span class="pos">Sí</span> <span class="hint">'+esc(a.cuentas.join(', '))+'</span>':'<span class="hint">—</span>'}</td></tr>`))}</div>`;
+  const tenemos=e?[...new Set([].concat(...e.portafolios.map(x=>x.activos.filter(a=>a.cuentas.length).map(a=>a.ticker))))]:[];
+  const eH=e?`<div class="iol-est"><div class="iol-head"><h4>${esc(e.titulo)}</h4>${ver(e.link,'Informe completo')}</div>
+    ${e.contexto&&e.contexto.length?`<div class="iol-tags">${e.contexto.map(c=>`<span>${esc(c)}</span>`).join('')}</div>`:''}
+    ${(e.enfoque||[]).map(x=>`<p class="iol-enf">${esc(x.t)}</p>`).join('')}
+    ${e.portafolios.length?`<div class="grid2">${e.portafolios.map(pt).join('')}</div>`:''}
+    <p class="rnote">${tenemos.length?`Instrumentos sugeridos presentes en las cuentas: ${esc(tenemos.join(', '))}.`:'Ninguno de los instrumentos sugeridos figura hoy en las cuentas.'}${e.rendimiento&&e.rendimiento.length?' '+esc(e.rendimiento.map(r=>r.t).join(' ')):''}</p></div>`:'';
+  return dH+eH;
+}
 function renderPre(p){
   const m=n=>p.macro.find(x=>x.nombre===n)||{};
   const es=m('Futuro S&P 500'),nq=m('Futuro Nasdaq 100'),vix=m('VIX (volatilidad)'),t10=m('Bono del Tesoro EE.UU. 10 años (%)');
@@ -725,12 +752,13 @@ function renderPre(p){
   ${portada(p.editorial,auto,'pre-mapa',(p.macro||[]).filter(x=>['futuros','global','commodities'].includes(x.grupo)||x.nombre==='Índice dólar (DXY)'))}
   ${sec(1,'Calendario económico del día',calendarioTabla(p.calendario),'Horario de Argentina. Fuente: Forex Factory (EE.UU., zona euro, China, Reino Unido y Japón; impacto alto y medio) y eventos locales cargados en la pestaña Agenda.')}
   ${sec(2,'Noticias del día',diario(p.noticias))}
-  ${sec(3,'Lo que se dice en redes',enX(p.x))}
-  ${sec(4,'Mercados internacionales',`<div class="grid2"><div>${macroTabla(p.macro,['futuros','riesgo'])}</div><div>${macroTabla(p.macro,['eeuu','commodities','global'])}</div></div>`)}
-  ${sec(5,'Argentina al cierre anterior',`<div class="kpis">${kpi('Riesgo país',ar.riesgo?nf(ar.riesgo.valor,0)+' pb':'—',ar.riesgo?'Dato al '+fCorta(ar.riesgo.fecha):'')}${kpi('S&P Merval',ar.merval?nf(ar.merval.valor,0):'—',ar.merval?`<span class="${vcls(ar.merval.var)}">${pc(ar.merval.var)}</span>`:'Sin dato intradiario')}${kpi('Dólar MEP',mep?'$ '+nf(mep.venta):'—','Venta')}${kpi('Contado con liquidación',ccl?'$ '+nf(ccl.venta):'—','Venta')}</div><div class="grid2"><div>${tendencia('pre-tend',p.serie)||'<p class="note">El gráfico de tendencia aparece cuando hay al menos dos cierres registrados.</p>'}</div><div>${dolaresTabla(ar.dolares)}</div></div>`)}
-  ${sec(6,'ADRs argentinos en Nueva York',`<div class="grid2"><div><div class="rsub">Premarket (o último cierre si no operan)</div>${adrsChart('pre-adr',p.adrs,'pre')}</div><div>${tbl([['Ticker','l'],['Cierre US$'],['Var. cierre'],['Premarket'],['Var. BYMA']],(p.adrs||[]).map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span></td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.pre)}"><b>${pc(a.pre)}</b></td><td class="mono ${vcls(a.local)}">${pc(a.local)}</td></tr>`))}</div></div>`,'Premarket: variación respecto del cierre anterior en la sesión previa a la apertura de Nueva York.')}
-  ${sec(7,'CEDEARs en cartera: subyacentes en premarket',`<div class="grid2"><div class="chart tall"><canvas id="pre-ced"></canvas></div><div>${tbl([['CEDEAR','l'],['Exposición'],['Premarket'],['Impacto est.']],ced.map(c=>`<tr><td class="l"><span class="tk">${esc(c.ticker)}</span> <span class="hint">${esc(c.cuentas.join(', '))}</span></td><td class="mono">${fA(c.valor)}</td><td class="mono ${vcls(c.pre)}">${pc(c.pre)}</td><td class="mono ${vcls(c.impacto)}">${c.impacto==null?'—':sgnA(c.impacto)}</td></tr>`).concat([`<tr class="sub"><td class="l">Total</td><td class="mono">${fA(im.exposicion)}</td><td class="mono ${vcls(im.pct)}">${pc(im.pct)}</td><td class="mono ${vcls(im.total)}">${sgnA(im.total)}</td></tr>`]))}</div></div>`,'Impacto estimado = exposición en pesos × variación premarket del subyacente. Cálculo propio; no incluye la variación del CCL.')}
-  ${sec(8,'Agenda del día',agendaBloque(p.agenda,'Acreditación de cheques'))}
+  ${sec(3,'Estrategia y visión de Invertir Online',iolBloque(p.iol),'Contenido del equipo de Estrategia de Invertir Online, resumido automáticamente; la versión completa está en cada enlace. Según IOL, sus reportes no constituyen oferta ni recomendación de compra o venta.')}
+  ${sec(4,'Lo que se dice en redes',enX(p.x))}
+  ${sec(5,'Mercados internacionales',`<div class="grid2"><div>${macroTabla(p.macro,['futuros','riesgo'])}</div><div>${macroTabla(p.macro,['eeuu','commodities','global'])}</div></div>`)}
+  ${sec(6,'Argentina al cierre anterior',`<div class="kpis">${kpi('Riesgo país',ar.riesgo?nf(ar.riesgo.valor,0)+' pb':'—',ar.riesgo?'Dato al '+fCorta(ar.riesgo.fecha):'')}${kpi('S&P Merval',ar.merval?nf(ar.merval.valor,0):'—',ar.merval?`<span class="${vcls(ar.merval.var)}">${pc(ar.merval.var)}</span>`:'Sin dato intradiario')}${kpi('Dólar MEP',mep?'$ '+nf(mep.venta):'—','Venta')}${kpi('Contado con liquidación',ccl?'$ '+nf(ccl.venta):'—','Venta')}</div><div class="grid2"><div>${tendencia('pre-tend',p.serie)||'<p class="note">El gráfico de tendencia aparece cuando hay al menos dos cierres registrados.</p>'}</div><div>${dolaresTabla(ar.dolares)}</div></div>`)}
+  ${sec(7,'ADRs argentinos en Nueva York',`<div class="grid2"><div><div class="rsub">Premarket (o último cierre si no operan)</div>${adrsChart('pre-adr',p.adrs,'pre')}</div><div>${tbl([['Ticker','l'],['Cierre US$'],['Var. cierre'],['Premarket'],['Var. BYMA']],(p.adrs||[]).map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span></td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.pre)}"><b>${pc(a.pre)}</b></td><td class="mono ${vcls(a.local)}">${pc(a.local)}</td></tr>`))}</div></div>`,'Premarket: variación respecto del cierre anterior en la sesión previa a la apertura de Nueva York.')}
+  ${sec(8,'CEDEARs en cartera: subyacentes en premarket',`<div class="grid2"><div class="chart tall"><canvas id="pre-ced"></canvas></div><div>${tbl([['CEDEAR','l'],['Exposición'],['Premarket'],['Impacto est.']],ced.map(c=>`<tr><td class="l"><span class="tk">${esc(c.ticker)}</span> <span class="hint">${esc(c.cuentas.join(', '))}</span></td><td class="mono">${fA(c.valor)}</td><td class="mono ${vcls(c.pre)}">${pc(c.pre)}</td><td class="mono ${vcls(c.impacto)}">${c.impacto==null?'—':sgnA(c.impacto)}</td></tr>`).concat([`<tr class="sub"><td class="l">Total</td><td class="mono">${fA(im.exposicion)}</td><td class="mono ${vcls(im.pct)}">${pc(im.pct)}</td><td class="mono ${vcls(im.total)}">${sgnA(im.total)}</td></tr>`]))}</div></div>`,'Impacto estimado = exposición en pesos × variación premarket del subyacente. Cálculo propio; no incluye la variación del CCL.')}
+  ${sec(9,'Agenda del día',agendaBloque(p.agenda,'Acreditación de cheques'))}
   ${repFoot(p,'Los datos internacionales corresponden al momento de generación del informe. Las tenencias de la cartera corresponden al último cierre disponible (el detalle está en Portfolio → Resumen). Las noticias se seleccionan automáticamente por palabras clave y tenencias; los resúmenes son los que publica cada medio.')}</article>`;
 }
 
@@ -756,12 +784,13 @@ function renderPost(p){
   ${portada(p.editorial,auto,'post-mapa',(p.macro||[]).filter(x=>['eeuu','global','commodities'].includes(x.grupo)||x.nombre==='Índice dólar (DXY)'))}
   ${sec(1,'Resumen de la rueda',`<div class="kpis">${kpi('Cartera · var. del día',sgnA(t.varHoy),pc(t.varPct),vcls(t.varHoy))}${kpi('S&P Merval',r.merval?nf(r.merval.valor,0):'—',r.merval?`<span class="${vcls(r.merval.var)}">${pc(r.merval.var)}</span>`:'Sin dato intradiario')}${kpi('Riesgo país',r.riesgo?nf(r.riesgo.valor,0)+' pb':'—',r.riesgo?'Dato al '+fCorta(r.riesgo.fecha)+(dRP!=null?` · <span class="${vcls(-dRP)}">${dRP>0?'+':''}${nf(dRP,0)} pb</span>`:''):'')}${kpi('Dólar MEP',mep?'$ '+nf(mep.venta):'—','Venta')}${kpi('S&P 500',vnum(r.spx&&r.spx.valor,0),`<span class="${vcls(r.spx&&r.spx.var)}">${pc(r.spx&&r.spx.var)}</span>`)}${kpi('Nasdaq',vnum(r.ndx&&r.ndx.valor,0),`<span class="${vcls(r.ndx&&r.ndx.var)}">${pc(r.ndx&&r.ndx.var)}</span>`)}</div><div class="grid2"><div>${tendencia('post-tend',p.serie)||'<p class="note">El gráfico de tendencia aparece cuando hay al menos dos cierres registrados.</p>'}</div><div>${dolaresTabla(r.dolares)}</div></div>`)}
   ${sec(2,'Noticias del día',diario(p.noticias))}
-  ${sec(3,'Lo que se dice en redes',enX(p.x))}
-  ${sec(4,'ADRs argentinos y operaciones fuera de horario',`<div class="grid2"><div><div class="rsub">ADRs en Nueva York · var. % al cierre</div>${adrsChart('post-adr',p.adrs,'varCierre')||'<p class="note">Sin datos de ADRs.</p>'}</div><div><div class="rsub">After-hours (CEDEARs en cartera y ADRs)</div>${tbl([['Ticker','l'],['Cierre US$'],['Var. cierre'],['After-hours']],ah.map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span>${a.cartera?' <span class="hint">en cartera</span>':''}</td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.post)}"><b>${pc(a.post)}</b></td></tr>`))}</div></div>`)}
-  ${sec(5,'Curvas de bonos',curvasBloque(p),'Datos de Rava Bursátil. TIR anual; TEM = tasa efectiva mensual equivalente. Curvas ajustadas por mínimos cuadrados sobre el logaritmo de la duration. Formato inspirado en el Semanal de El Dashboard.')}
-  ${sec(6,'Mercados internacionales al cierre',`<div class="grid2"><div>${macroTabla(p.macro,['eeuu','riesgo'])}</div><div>${macroTabla(p.macro,['commodities','global'])}</div></div>`)}
-  ${sec(7,'Calendario económico'+(p.calendarioDia?' del '+esc(fechaLarga(p.calendarioDia).replace(/ de \d{4}$/,'')).toLowerCase():' del próximo día hábil'),calendarioTabla(p.calendario),'Horario de Argentina. Fuente: Forex Factory y eventos locales cargados en la pestaña Agenda.')}
-  ${sec(8,'Agenda próxima',agendaBloque(p.agenda,'Acreditación de cheques · próximos días hábiles'))}
+  ${sec(3,'Estrategia y visión de Invertir Online',iolBloque(p.iol),'Contenido del equipo de Estrategia de Invertir Online, resumido automáticamente; la versión completa está en cada enlace. Según IOL, sus reportes no constituyen oferta ni recomendación de compra o venta.')}
+  ${sec(4,'Lo que se dice en redes',enX(p.x))}
+  ${sec(5,'ADRs argentinos y operaciones fuera de horario',`<div class="grid2"><div><div class="rsub">ADRs en Nueva York · var. % al cierre</div>${adrsChart('post-adr',p.adrs,'varCierre')||'<p class="note">Sin datos de ADRs.</p>'}</div><div><div class="rsub">After-hours (CEDEARs en cartera y ADRs)</div>${tbl([['Ticker','l'],['Cierre US$'],['Var. cierre'],['After-hours']],ah.map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span>${a.cartera?' <span class="hint">en cartera</span>':''}</td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.post)}"><b>${pc(a.post)}</b></td></tr>`))}</div></div>`)}
+  ${sec(6,'Curvas de bonos',curvasBloque(p),'Datos de Rava Bursátil. TIR anual; TEM = tasa efectiva mensual equivalente. Curvas ajustadas por mínimos cuadrados sobre el logaritmo de la duration. Formato inspirado en el Semanal de El Dashboard.')}
+  ${sec(7,'Mercados internacionales al cierre',`<div class="grid2"><div>${macroTabla(p.macro,['eeuu','riesgo'])}</div><div>${macroTabla(p.macro,['commodities','global'])}</div></div>`)}
+  ${sec(8,'Calendario económico'+(p.calendarioDia?' del '+esc(fechaLarga(p.calendarioDia).replace(/ de \d{4}$/,'')).toLowerCase():' del próximo día hábil'),calendarioTabla(p.calendario),'Horario de Argentina. Fuente: Forex Factory y eventos locales cargados en la pestaña Agenda.')}
+  ${sec(9,'Agenda próxima',agendaBloque(p.agenda,'Acreditación de cheques · próximos días hábiles'))}
   ${repFoot(p,'Variaciones de BYMA contra el cierre anterior (plazo 24 horas). Las especies sin operaciones en el día se valúan al último precio informado por Nasini. El resultado por cuenta, el detalle por especie y las contribuciones del día están en Portfolio → Resumen. Las noticias se seleccionan automáticamente; los resúmenes son los que publica cada medio.')}</article>`;
 }
 

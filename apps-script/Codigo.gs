@@ -711,6 +711,8 @@ function datosEditorial_(inf) {
     calendarioEconomico: (inf.calendario || []).map(c => [c.dia, c.hora, c.pais, c.evento, c.impacto, c.estimado, c.anterior]),
     titulares: (inf.noticias || []).map(n => ({ seccion: n.seccion, fuente: n.fuente, titulo: n.titulo, resumen: n.resumen })),
     x: (inf.x || []).map(p => ({ cuenta: p.usuario, texto: p.texto })),
+    researchIOL: inf.iol ? { noticiasDeMercado: inf.iol.diario ? inf.iol.diario.resumen : null,
+      estrategiaDelMes: inf.iol.estrategia ? inf.iol.estrategia.enfoque.map(e => corto_(e.t, 300)) : null } : null,
   };
 }
 // Riesgo país, Merval y MEP de las últimas ruedas registradas (más antigua primero), para los gráficos de tendencia.
@@ -726,6 +728,7 @@ function recortar_(inf) {
   while (largo() > 48000 && inf.noticias && inf.noticias.length > 6) inf.noticias.pop();
   if (largo() > 48000 && inf.noticias) inf.noticias.forEach(n => { n.resumen = corto_(n.resumen || '', 120); n.imagen = ''; });
   while (largo() > 48000 && inf.x && inf.x.length > 3) inf.x.pop();
+  if (largo() > 48000 && inf.iol && inf.iol.diario) inf.iol.diario.secciones.forEach(s => { s.puntos = s.puntos.slice(0, 3).map(p => ({ t: corto_(p.t, 200), d: '' })); });
   return inf;
 }
 
@@ -811,11 +814,116 @@ function fuentes_(inf) {
   const f = [iolConfigurado_() ? 'BYMA vía Invertir Online' : 'BYMA vía Rava Bursátil', 'Rava Bursátil (curvas de bonos)', 'TradingView (EE.UU.)', 'DolarApi', 'ArgentinaDatos'];
   const medios = [...new Set(((inf && inf.noticias) || []).map(n => n.fuente))];
   f.push(...(medios.length ? medios : ['Ámbito', 'Infobae', 'El Cronista']));
+  if (inf && inf.iol) f.push('Invertir Online (Noticias de Mercado y Portafolios sugeridos · Estrategia IOL)');
   [...new Set(((inf && inf.x) || []).map(p => p.red === 'Telegram' ? 'Telegram (' + p.autor + ')' : 'X'))].forEach(r => f.push(r));
   if (inf && inf.editorial && inf.editorial.ia) f.push('Portada redactada con Claude (Anthropic) sobre los datos del informe');
   f.push('Resumen de Posiciones Nasini');
   return f;
 }
+
+// ---------------------------------------------------------------- research de Invertir Online
+// Noticias de Mercado (diario) y Portafolios sugeridos · Estrategia IOL (mensual), tomados de las páginas públicas de research.
+const IOL_WEB = 'https://www.invertironline.com';
+function iolPedirWeb_(rutas) {
+  const rs = UrlFetchApp.fetchAll(rutas.map(r => ({ url: IOL_WEB + r, muteHttpExceptions: true, followRedirects: true,
+    headers: { 'User-Agent': 'Mozilla/5.0 (LongoFinance)', Accept: 'text/html' } })));
+  return rs.map(r => r.getResponseCode() === 200 ? r.getContentText() : '');
+}
+function iolTexto_(s) { return plano_(String(s || '').replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCharCode(parseInt(h, 16)))).replace(/\s+([,.;:)%])/g, '$1').replace(/\(\s+/g, '('); }
+function iolMeta_(html, prop) {
+  const m = html.match(new RegExp('<meta (?:name|property)="' + prop + '" content="([^"]*)"'));
+  return m ? iolTexto_(m[1]).replace(/\s*\|\s*IOL invertironline\s*$/, '') : '';
+}
+// Cuerpo del informe: desde <main> hasta el descargo legal.
+function iolCuerpo_(html) {
+  const i = Math.max(html.indexOf('<main'), 0), f = html.indexOf('Este reporte tiene el solo', i);
+  return html.slice(i, f > i ? f : html.length);
+}
+// Viñeta: texto completo y, si lo hay, el tramo destacado en negrita por IOL.
+function iolPunto_(li, max) {
+  const t = iolTexto_(li), d = iolTexto_((li.match(/<strong[^>]*>[\s\S]*?<\/strong>/g) || []).join(' ').replace(/<\/?strong[^>]*>/g, ''));
+  return { t: corto_(t, max), d: d.length >= 25 && d.length <= 220 && corto_(t, max).indexOf(d) >= 0 ? d : '' };
+}
+// Secciones (títulos h1-h3) con sus viñetas, en el orden de la página.
+function iolSecciones_(cuerpo, maxPuntos, maxLargo) {
+  const out = []; let s = null;
+  const re = /<(h[1-3])[^>]*>([\s\S]*?)<\/\1>|<li[^>]*>([\s\S]*?)<\/li>/g; let m;
+  while ((m = re.exec(cuerpo))) {
+    if (m[1]) {
+      const t = iolTexto_(m[2]);
+      if (!t) continue;
+      if (/Conocé nuestro canal|Explorá nuestros reportes|Un buen inversor/i.test(t)) break;
+      s = { titulo: t, puntos: [] }; out.push(s);
+    } else if (s && s.puntos.length < maxPuntos) {
+      const p = iolPunto_(m[3], maxLargo);
+      if (p.t.length > 30) s.puntos.push(p);
+    }
+  }
+  return out.filter(x => x.puntos.length);
+}
+// Ruta más reciente (por la fecha DD-MM-YYYY del final) entre las que coinciden con el patrón.
+function iolUltima_(html, patron) {
+  const v = {}; let m; const re = new RegExp('href="(/posts/(?:reportes/)?' + patron + '-(\\d\\d)-(\\d\\d)-(\\d{4}))"', 'g');
+  while ((m = re.exec(html))) v[m[4] + '-' + m[3] + '-' + m[2]] = m[1];
+  const k = Object.keys(v).sort().pop();
+  return k ? { ruta: v[k], fecha: k } : null;
+}
+function iolDiario_(index) {
+  let u = iolUltima_(index, 'rdm-noticiasdemercado');
+  if (!u) {   // sin índice: se prueba con hoy y los días anteriores
+    for (let d = 0; d < 5 && !u; d++) { const f = hoyK_(-d), r = '/posts/reportes/rdm-noticiasdemercado-' + f.slice(8) + '-' + f.slice(5, 7) + '-' + f.slice(0, 4);
+      if (iolPedirWeb_([r])[0]) u = { ruta: r, fecha: f }; }
+    if (!u) return null;
+  }
+  const html = iolPedirWeb_([u.ruta])[0];
+  if (!html) return null;
+  const sec = iolSecciones_(iolCuerpo_(html), 4, 280).filter(x => !/^Noticias de Mercado/i.test(x.titulo));
+  if (!sec.length) return null;
+  return { titulo: iolMeta_(html, 'og:title') || 'Noticias de Mercado', resumen: iolMeta_(html, 'description'), fecha: u.fecha, link: IOL_WEB + u.ruta, secciones: sec };
+}
+function iolPortafolios_(index, tenidas) {
+  const u = iolUltima_(index, 'portafolios-sugeridos-argentina-[a-z]+');
+  if (!u) return null;
+  const html = iolPedirWeb_([u.ruta])[0];
+  if (!html) return null;
+  const cuerpo = iolCuerpo_(html), sec = iolSecciones_(cuerpo, 6, 600);
+  const enfoque = [].concat(...sec.filter(s => !/rendimiento/i.test(s.titulo)).map(s => s.puntos)).filter(p => /estrategia|portafolios? de|sesgo|priori|recomend|sobrepond/i.test(p.t)).slice(0, 3);
+  const rend = (sec.find(s => /rendimiento/i.test(s.titulo)) || { puntos: [] }).puntos.slice(0, 3);
+  const contexto = sec.filter(s => !/rendimiento|^Portafolios sugeridos/i.test(s.titulo)).slice(0, 4).map(s => s.titulo);
+  const rutas = [...new Set((cuerpo.match(/href="\/posts\/(?:reportes\/)?portafolio-inversiones-[^"]+"/g) || []).map(h => h.slice(6, -1)))].slice(0, 3);
+  const pags = rutas.length ? iolPedirWeb_(rutas) : [];
+  const portafolios = rutas.map((r, i) => {
+    const h = pags[i]; if (!h) return null;
+    const c = iolCuerpo_(h), pl = iolTexto_(c);
+    const mz = pl.match(/conformada de la siguiente manera:\s*([^.]+)\./i);
+    const activos = []; let m; const re = /<h3[^>]*>([\s\S]*?)<\/h3>/g;
+    while ((m = re.exec(c))) {
+      const t = iolTexto_(m[1]).replace(/:\s*$/, ''), a = t.match(/^(.*?)\s*[-–]\s*([A-Z][A-Z0-9]{1,9})\s*\((\d+(?:[.,]\d+)?)\s*%\)/);
+      if (a) activos.push({ nombre: a[1].trim(), ticker: a[2], pct: parseFloat(a[3].replace(',', '.')), cuentas: tenidas[a[2]] || tenidas[a[2].replace(/[DC]$/, '')] || [] });
+    }
+    return { nombre: /mayor-potencial/.test(r) ? 'Mayor potencial' : /estables/.test(r) ? 'Inversiones más estables' : (iolMeta_(h, 'og:title') || 'Portafolio'),
+      mezcla: mz ? mz[1].trim() : '', activos, link: IOL_WEB + r.replace(/^\/posts\/(?!reportes\/)/, '/posts/reportes/') };
+  }).filter(p => p && p.activos.length);
+  return { titulo: iolMeta_(html, 'og:title') || 'Portafolios sugeridos', fecha: u.fecha, link: IOL_WEB + u.ruta, contexto, enfoque, rendimiento: rend, portafolios };
+}
+// Junta ambos con caché (diario: 1 h; portafolios: 12 h). tenidas = { TICKER: [cuentas] } para cruzar con la cartera.
+function iolResearch_(tenidas) {
+  const C = CacheService.getScriptCache();
+  const leer = k => { try { const v = C.get(k); return v ? JSON.parse(v) : undefined; } catch (e) { return undefined; } };
+  let diario = leer('iolr_diario'), port = leer('iolr_port');
+  if (diario === undefined || port === undefined) {
+    let index = '';
+    try { index = iolPedirWeb_(['/research'])[0]; } catch (e) { console.warn('IOL research: ' + e.message); }
+    if (diario === undefined) { try { diario = iolDiario_(index); } catch (e) { console.warn('IOL diario: ' + e.message); diario = null; }
+      if (diario) C.put('iolr_diario', JSON.stringify(diario), 3600); }
+    if (port === undefined) { try { port = iolPortafolios_(index, {}); } catch (e) { console.warn('IOL portafolios: ' + e.message); port = null; }
+      if (port) C.put('iolr_port', JSON.stringify(port), 43200); }
+  }
+  if (port) port.portafolios.forEach(p => p.activos.forEach(a => { a.cuentas = tenidas[a.ticker] || tenidas[a.ticker.replace(/[DC]$/, '')] || []; }));
+  if (!diario && !port) return null;
+  return { diario: diario || null, estrategia: port || null };
+}
+function tenidas_(pos) { const t = {}; pos.forEach(p => { (t[p.ticker] = t[p.ticker] || []).includes(p.cuenta) || t[p.ticker].push(p.cuenta); }); return t; }
 
 // ---------------------------------------------------------------- premarket
 function armarPremarket_(ss) {
@@ -838,6 +946,7 @@ function armarPremarket_(ss) {
     calendario: calendario_(ss, hoyK_(), hoyK_()),
     agenda: { cheques: chequesEntre_(ss, hoyK_(), hoyK_()), balances: balances_(us, 7) },
     noticias: noticias_(20, 16, claves), x: redes_(claves, 20), serie: serie_(historial_(ss)),
+    iol: iolResearch_(tenidas_(pos)),
   };
 }
 
@@ -872,6 +981,7 @@ function armarPostmarket_(ss) {
     calendario: calendario_(ss, proximoHabil_(), proximoHabil_()), calendarioDia: proximoHabil_(),
     agenda: { cheques: chequesEntre_(ss, hoyK_(1), hoyK_(4)), balances: balances_(us, 7) },
     noticias: noticias_(12, 16, claves), x: redes_(claves, 12),
+    iol: iolResearch_(tenidas_(pos)),
   };
 }
 
