@@ -31,6 +31,7 @@ function onOpen() {
     .addItem('Generar informe postmarket', 'postmarketAhora')
     .addItem('Generar informe semanal', 'semanalAhora')
     .addSeparator()
+    .addItem('Configurar Invertir Online', 'configurarIOL')
     .addItem('Instalar automatizaciones', 'instalar')
     .addToUi();
 }
@@ -90,23 +91,95 @@ function enHorario_() {
   return dow <= 5 && min >= 10 * 60 + 25 && min <= 18 * 60 + 15;
 }
 
+// ================================================================ Invertir Online (fuente principal de cotizaciones)
+// API oficial de IOL con el usuario del dueño (credenciales en Propiedades del script, cargadas desde el menú).
+// Cotización plazo 24 hs (t1) de cada especie en BYMA: precio real del CEDEAR, bono, letra, ON o acción.
+// Si IOL no está configurado o no responde, se usa Rava como respaldo.
+const IOL_API = 'https://api.invertironline.com';
+const IOL_PLAZO = 't1';
+
+function iolConfigurado_() { const P = PropertiesService.getScriptProperties(); return !!(P.getProperty('IOL_USUARIO') && P.getProperty('IOL_CLAVE')); }
+function iolToken_(renovar) {
+  const cache = CacheService.getScriptCache();
+  if (!renovar) { const t = cache.get('iol_token'); if (t) return t; }
+  const P = PropertiesService.getScriptProperties();
+  const r = UrlFetchApp.fetch(IOL_API + '/token', { method: 'post', muteHttpExceptions: true,
+    payload: { username: P.getProperty('IOL_USUARIO'), password: P.getProperty('IOL_CLAVE'), grant_type: 'password' } });
+  if (r.getResponseCode() !== 200) throw new Error('Invertir Online rechazó el ingreso (HTTP ' + r.getResponseCode() + '). Revise usuario, clave y que la API esté habilitada en su cuenta.');
+  const j = JSON.parse(r.getContentText());
+  if (!j.access_token) throw new Error('Invertir Online no devolvió un token de acceso.');
+  cache.put('iol_token', j.access_token, Math.max(60, Math.min(Number(j.expires_in) || 900, 900) - 60));
+  return j.access_token;
+}
+// Devuelve { SIMBOLO: { ult, ant, hora, plazo } } para los símbolos pedidos.
+function iolCotizaciones_(simbolos) {
+  const syms = [...new Set(simbolos)].filter(Boolean);
+  const pedir = token => UrlFetchApp.fetchAll(syms.map(sym => ({
+    url: IOL_API + '/api/v2/bCBA/Titulos/' + encodeURIComponent(sym) + '/Cotizacion?model.simbolo=' + encodeURIComponent(sym) + '&model.mercado=bCBA&model.plazo=' + IOL_PLAZO,
+    headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true })));
+  let res = pedir(iolToken_(false));
+  if (res.some(r => r.getResponseCode() === 401)) res = pedir(iolToken_(true));   // token vencido
+  const out = {};
+  res.forEach((r, i) => {
+    if (r.getResponseCode() !== 200) return;
+    try {
+      const q = JSON.parse(r.getContentText());
+      const ult = Number(q.ultimoPrecio) || 0, ant = Number(q.cierreAnterior) || 0;
+      if (ult > 0) out[syms[i]] = { ult, ant: ant > 0 ? ant : (q.variacion != null && Number(q.variacion) > -100 ? ult / (1 + Number(q.variacion) / 100) : 0),
+        hora: q.fechaHora ? Utilities.formatDate(new Date(q.fechaHora), TZ, 'HH:mm:ss') : '', plazo: IOL_PLAZO };
+    } catch (e) { /* especie sin datos */ }
+  });
+  return out;
+}
+// Menú: carga o cambia el usuario y la clave de IOL y prueba la conexión.
+function configurarIOL() {
+  const ui = SpreadsheetApp.getUi();
+  const u = ui.prompt('Invertir Online', 'Usuario de Invertir Online (el mismo con el que ingresa a la web):', ui.ButtonSet.OK_CANCEL);
+  if (u.getSelectedButton() !== ui.Button.OK || !u.getResponseText().trim()) return;
+  const c = ui.prompt('Invertir Online', 'Contraseña de Invertir Online.\nSe guarda en la configuración privada del script; no queda en la planilla.', ui.ButtonSet.OK_CANCEL);
+  if (c.getSelectedButton() !== ui.Button.OK || !c.getResponseText()) return;
+  const P = PropertiesService.getScriptProperties();
+  P.setProperties({ IOL_USUARIO: u.getResponseText().trim(), IOL_CLAVE: c.getResponseText() });
+  CacheService.getScriptCache().remove('iol_token');
+  try {
+    const q = iolCotizaciones_(['GGAL', 'AL30', 'AL30D']);
+    const ok = Object.keys(q);
+    ui.alert('Invertir Online conectado', ok.length ? 'Conexión correcta. Prueba: ' + ok.map(k => k + ' ' + q[k].ult).join(' · ') + '\nDesde ahora las cotizaciones salen de Invertir Online.' : 'El ingreso funcionó pero no se obtuvieron cotizaciones. Puede ser un horario sin operaciones; se reintenta solo cada 15 minutos.', ui.ButtonSet.OK);
+    actualizarPrecios_(true);
+  } catch (e) {
+    ui.alert('Invertir Online', 'No se pudo conectar: ' + e.message + '\nMientras tanto las cotizaciones siguen saliendo de Rava.', ui.ButtonSet.OK);
+  }
+}
+
 function actualizarPrecios_(forzar) {
   if (!forzar && !enHorario_()) return 'Fuera de horario de mercado.';
   const ss = SpreadsheetApp.getActive();
   try {
     agregarPosicionesNuevas_(ss);
     const want = especiesAPedir_(ss);
-    const res = UrlFetchApp.fetch(RAVA_URL, { muteHttpExceptions: true, headers: { Accept: 'application/json' } });
-    if (res.getResponseCode() !== 200) throw new Error('Rava respondió HTTP ' + res.getResponseCode());
-    const datos = JSON.parse(res.getContentText()).datos || [];
-
+    // 1) Invertir Online (fuente principal)
+    let iol = null, nota = '';
+    if (iolConfigurado_()) {
+      try { iol = iolCotizaciones_(Object.keys(want).map(t => want[t].sym).concat(['AL30', 'AL30D'])); }
+      catch (e) { nota = ' IOL no disponible (' + e.message + '); se usó Rava.'; }
+      if (iol && Object.keys(iol).length < 10) { nota = ' IOL devolvió pocos precios; se completó con Rava.'; }
+    }
+    // 2) Rava solo si hace falta completar
     const best = {};
+    const sinIol = iol ? Object.keys(want).filter(t => !iol[want[t].sym]).length : Infinity;
+    const faltanIol = sinIol > 5;   // especies sin operaciones quedan con el último precio de Nasini; Rava solo si IOL falla de verdad
+    const datos = faltanIol ? (() => { try { const r = UrlFetchApp.fetch(RAVA_URL, { muteHttpExceptions: true, headers: { Accept: 'application/json' } });
+      return r.getResponseCode() === 200 ? (JSON.parse(r.getContentText()).datos || []) : []; } catch (e) { return []; } })() : [];
     datos.forEach(x => {
       if (x.plazo !== 1 && x.plazo !== 2) return;
       const ult = parseFloat(x.ultimo) || 0, ant = parseFloat(x.anterior) || 0;
       const k = x.simbolo + '|' + x.moneda;
       const score = (ult > 0 ? 2 : 0) + (x.plazo === 2 ? 1 : 0);   // 24 hs con precio primero
       if (!best[k] || score > best[k].score) best[k] = { score, ult, ant, hora: x.hora, plazo: x.plazo, sym: x.simbolo };
+    });
+    if (iol) Object.keys(iol).forEach(sym => {   // IOL tiene prioridad sobre Rava
+      const q = iol[sym];
+      ['ARS', 'USD'].forEach(mon => { best[sym + '|' + mon] = { score: 9, ult: q.ult, ant: q.ant, hora: q.hora, plazo: q.plazo, sym, fuente: 'IOL' }; });
     });
 
     const filas = [], faltan = [];
@@ -116,9 +189,9 @@ function actualizarPrecios_(forzar) {
       if (w.ref && !(b.ult / w.ref > 0.4 && b.ult / w.ref < 2.5)) { faltan.push(t); return; }   // precio absurdo
       let chg = b.ant > 0 ? b.ult / b.ant - 1 : 0;
       if (Math.abs(chg) >= 0.5) chg = 0;
-      filas.push([t, b.ult, b.ant, chg, b.hora, b.plazo, b.sym]);
+      filas.push([t, b.ult, b.ant, chg, b.hora, b.fuente === 'IOL' ? 'IOL ' + b.plazo : 'Rava ' + b.plazo, b.sym]);
     });
-    if (filas.length < 10) throw new Error('Rava devolvió muy pocos precios (' + filas.length + '). No se tocó nada.');
+    if (filas.length < 10) throw new Error('Las fuentes devolvieron muy pocos precios (' + filas.length + '). No se tocó nada.' + nota);
 
     const P = ss.getSheetByName('Precios');
     const last = P.getLastRow();
@@ -128,7 +201,8 @@ function actualizarPrecios_(forzar) {
     const a = best['AL30|ARS'], d = best['AL30D|USD'];
     if (a && d && a.ult > 0 && d.ult > 0) cfg_(ss).getRange(CFG.mepVivo).setValue(Math.round(a.ult / d.ult * 100) / 100);
     cfg_(ss).getRange(CFG.actualizado).setValue(new Date());
-    const msg = 'Precios OK: ' + filas.length + ' especies' + (faltan.length ? '. Sin precio: ' + faltan.join(', ') : '') + '.';
+    const nIol = filas.filter(f => String(f[5]).startsWith('IOL')).length;
+    const msg = 'Precios OK: ' + filas.length + ' especies (' + (nIol ? nIol + ' de Invertir Online' + (nIol < filas.length ? ', ' + (filas.length - nIol) + ' de Rava' : '') : 'Rava') + ')' + (faltan.length ? '. Sin precio: ' + faltan.join(', ') : '') + '.' + nota;
     estado_(ss, msg);
     return msg;
   } catch (e) {
@@ -724,7 +798,7 @@ function balances_(us, dias) {
 function hoyK_(offsetDias) { return Utilities.formatDate(new Date(Date.now() + (offsetDias || 0) * 86400000), TZ, 'yyyy-MM-dd'); }
 function cedearsUS_(pos) { return [...new Set(pos.filter(p => p.clase === 'CEDEARs').map(p => p.ticker))]; }
 function fuentes_(inf) {
-  const f = ['BYMA vía Rava Bursátil', 'TradingView', 'DolarApi', 'ArgentinaDatos'];
+  const f = [iolConfigurado_() ? 'BYMA vía Invertir Online' : 'BYMA vía Rava Bursátil', 'Rava Bursátil (curvas de bonos)', 'TradingView (EE.UU.)', 'DolarApi', 'ArgentinaDatos'];
   const medios = [...new Set(((inf && inf.noticias) || []).map(n => n.fuente))];
   f.push(...(medios.length ? medios : ['Ámbito', 'Infobae', 'El Cronista']));
   [...new Set(((inf && inf.x) || []).map(p => p.red === 'Telegram' ? 'Telegram (' + p.autor + ')' : 'X'))].forEach(r => f.push(r));

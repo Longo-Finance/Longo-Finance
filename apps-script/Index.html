@@ -223,7 +223,7 @@ tr.np-alta td{background:color-mix(in srgb,var(--red) 6%,transparent)}
 </main>
 <footer class="site-foot">
   <div><b>Longo Finance</b> · Julián Longoni · Agente Productor CNV · Matrícula N° 2936</div>
-  <div>La información publicada tiene carácter informativo y no constituye una recomendación de inversión. Cotizaciones con demora de hasta 20 minutos. Fuentes: BYMA vía Rava Bursátil, TradingView, DolarApi, ArgentinaDatos, diarios y portales argentinos e internacionales (Ámbito, Infobae, El Cronista, La Nación, CNBC, MarketWatch, Yahoo Finance, Google Noticias) redes (Telegram y, si está configurado, X). Tenencias según el Resumen de Posiciones de Nasini S.A. y movimientos registrados.</div>
+  <div>La información publicada tiene carácter informativo y no constituye una recomendación de inversión. Cotizaciones con demora de hasta 20 minutos. Fuentes: BYMA vía Invertir Online (respaldo: Rava Bursátil), Rava Bursátil (curvas de bonos), TradingView, DolarApi, ArgentinaDatos, diarios y portales argentinos e internacionales (Ámbito, Infobae, El Cronista, La Nación, CNBC, MarketWatch, Yahoo Finance, Google Noticias) redes (Telegram y, si está configurado, X). Tenencias según el Resumen de Posiciones de Nasini S.A. y movimientos registrados.</div>
 </footer>
 
 <script>
@@ -482,7 +482,7 @@ function renderReport(a){
   }
   const s=S[a];
   h+=`<div class="totbox big"><div><span><b>Total general</b></span><b>ARS ${nf(s.genARS)}</b></div><div><span>Total general en USD (MEP)</span><b>USD ${nf(s.genUSD)}</b></div></div>
-  <div class="note">Cantidades = Resumen de Posiciones Nasini + movimientos cargados. Precios BYMA 24 hs de Rava (con "Nasini" cuando la especie no operó). Var. día vs. cierre anterior. P&amp;L en moneda de origen con el precio promedio de compra. Dinero y caución según el último resumen de Nasini, más movimientos y cheques acreditados.</div>`;
+  <div class="note">Cantidades = Resumen de Posiciones Nasini + movimientos cargados. Precios BYMA plazo 24 horas de Invertir Online (con "Nasini" cuando la especie no operó). Var. día vs. cierre anterior. P&amp;L en moneda de origen con el precio promedio de compra. Dinero y caución según el último resumen de Nasini, más movimientos y cheques acreditados.</div>`;
   box.innerHTML=h;
   box.querySelectorAll('table[data-key] th').forEach(th=>th.onclick=()=>{const key=th.closest('table').dataset.key,k=th.dataset.k;const cur=st.sort[key];st.sort[key]=cur&&cur.k===k?{k,d:-cur.d}:{k,d:['tk','name'].includes(k)?1:-1};renderReport(a)});
   box.querySelectorAll('details.grp').forEach(d=>d.ontoggle=()=>{st.closed[d.dataset.key]=!d.open});
