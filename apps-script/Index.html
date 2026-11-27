@@ -177,6 +177,12 @@ tr.click{cursor:pointer}
 .np-imp{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:9px;border:1px solid currentColor}
 .np-imp:not(.neg):not(.neu){color:var(--muted)}
 tr.np-alta td{background:color-mix(in srgb,var(--red) 6%,transparent)}
+.np-curvas{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:18px 24px}
+.np-fig{margin:0}
+.np-fig figcaption{margin-bottom:6px}
+.np-fig figcaption b{display:block;font-size:13.5px}
+.np-fig figcaption span{display:block;font-size:11.5px;color:var(--muted)}
+@media(max-width:600px){.np-curvas{grid-template-columns:1fr}}
 .np-post footer a{margin-left:auto;color:var(--accent);text-decoration:none;font-weight:500}
 @media(max-width:800px){.np-front,.np-lead{grid-template-columns:1fr}.np-side{border-left:0;padding-left:0}.np-col{padding:12px 0 0;border-left:0;border-top:1px solid var(--border)}.np-col:first-child{border-top:0}}
 @media(max-width:600px){.np-name{font-size:32px}.np-h1{font-size:25px}.np-deck{font-size:16px}.np-lead h4{font-size:21px}.np-ed{justify-content:center}}
@@ -653,6 +659,49 @@ function adrsChart(id,adrs,campo){
   return `<div class="chart tall"><canvas id="${id}"></canvas></div>`;
 }
 
+// ─── curvas de bonos (formato El Dashboard) ───
+const FAM={bonares:['Bonares','#1f4e8c'],globales:['Globales','#e07b39'],bopreales:['Bopreales','#14365f'],lecap:['LECAP','#1f4e8c'],boncap:['BONCAP','#5b9bd5'],cer:['LECER y Boncer','#d0652e'],dl:['Dólar linked','#6b5ca5']};
+const ETQ={id:'etq',afterDatasetsDraw(c){const x=c.ctx;x.save();x.font='10px Inter, system-ui, sans-serif';x.fillStyle=css('--text');
+  c.data.datasets.forEach((d,i)=>{if(!d.etq||!c.isDatasetVisible(i))return;c.getDatasetMeta(i).data.forEach((pt,j)=>{const r=d.data[j];if(r&&r.t)x.fillText(r.t,pt.x+5,pt.y-5)})});x.restore()}};
+// Curva ajustada y = a + b·ln(x) (mínimos cuadrados), muestreada entre el primer y el último punto.
+function ajuste(pts){
+  const p=(pts||[]).filter(q=>q.x>0&&isFinite(q.y));if(p.length<3)return null;
+  const X=p.map(q=>Math.log(q.x)),Y=p.map(q=>q.y),n=p.length,mx=X.reduce((a,b)=>a+b)/n,my=Y.reduce((a,b)=>a+b)/n;
+  let sxy=0,sxx=0;X.forEach((v,i)=>{sxy+=(v-mx)*(Y[i]-my);sxx+=(v-mx)**2});if(!sxx)return null;
+  const b=sxy/sxx,a=my-b*mx,x0=Math.min(...p.map(q=>q.x)),x1=Math.max(...p.map(q=>q.x));
+  return Array.from({length:24},(_,i)=>{const v=x0*Math.pow(x1/x0,i/23);return{x:v,y:a+b*Math.log(v)}});
+}
+const alfa=(hex,a)=>{const n=parseInt(hex.slice(1),16);return`rgba(${n>>16&255},${n>>8&255},${n&255},${a})`};
+function curvaChart(id,grupos,hoy,ant,fHoy,fAnt,ejeX,xd){
+  const ds=[];let primera=true;
+  grupos.forEach(g=>{const col=FAM[g[0]][1],ph=[].concat(...g.map(k=>hoy[k]||[])),pa=ant?[].concat(...g.map(k=>ant[k]||[])):[];
+    const fh=ajuste(ph),fa=ajuste(pa);
+    if(fh){ds.push({type:'line',label:primera?'Cierre '+fHoy:'_',data:fh,borderColor:col,borderDash:[2,3],borderWidth:2,pointRadius:0,pointStyle:'line',fill:false,order:2});
+      if(fa)ds.push({type:'line',label:primera&&fAnt?'Cierre '+fAnt:'_',data:fa,borderColor:alfa(col,.7),borderDash:[7,4],borderWidth:1.5,pointRadius:0,pointStyle:'line',fill:{target:ds.length-1},backgroundColor:alfa(col,.14),order:3});
+      primera=false}
+    g.forEach(k=>{if(hoy[k]&&hoy[k].length)ds.push({label:FAM[k][0],data:hoy[k],backgroundColor:FAM[k][1],borderColor:FAM[k][1],pointRadius:4.5,pointHoverRadius:6,etq:true,order:1})});
+  });
+  PENDING.push(()=>chart(id,{type:'scatter',data:{datasets:ds},plugins:[ETQ],options:{responsive:true,maintainAspectRatio:false,animation:false,layout:{padding:{right:34,top:6}},
+    plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8,font:{size:11},filter:i=>i.text!=='_'}},
+      tooltip:{filter:i=>!!(i.raw&&i.raw.t),callbacks:{label:c=>` ${c.raw.t}: ${nf(c.raw.y,2)}% · ${ejeX} ${nf(c.raw.x,xd)}`}}},
+    scales:{x:{type:'linear',title:{display:true,text:ejeX,font:{size:11}},grid:{display:false}},y:{ticks:{callback:v=>nf(v,1)+'%'}}}}}));
+}
+function curvasBloque(p){
+  const c=p.curvas||{},a=p.curvasAnt||null;
+  if(!Object.keys(c).length)return '<p class="note">Sin datos de bonos disponibles en este informe.</p>';
+  const fH=fCorta(p.fecha),fA2=p.curvasAntFecha?fCorta(p.curvasAntFecha):'';
+  const defs=[['cv-hd','Curva hard dollar: Bonares y Globales','TIR anual en % por modified duration en años',[['bonares'],['globales']],'MD (años)',2],
+    ['cv-bp','Curva Bopreales','TIR anual en % por modified duration en años',[['bopreales']],'MD (años)',2],
+    ['cv-tf','Curva tasa fija: LECAP y BONCAP','TEM en % por modified duration en años',[['lecap','boncap']],'MD (años)',2],
+    ['cv-cer','Curva CER: LECER y Boncer','TEM real en % por modified duration en años',[['cer']],'MD (años)',2],
+    ['cv-dl','Curva dólar linked','TIR en dólares en % por días a vencimiento',[['dl']],'Días',0]]
+    .filter(d=>d[3].some(g=>g.some(k=>c[k]&&c[k].length)));
+  defs.forEach(d=>curvaChart(d[0],d[3],c,a,fH,fA2,d[4],d[5]));
+  const lg=p.legislacion||[];
+  return `<div class="np-curvas">${defs.map(d=>`<figure class="np-fig"><figcaption><b>${d[1]}</b><span>${d[2]}${a?' · punteado: cierre '+fH+' · a trazos: cierre '+fA2:''}</span></figcaption><div class="chart tall"><canvas id="${d[0]}"></canvas></div></figure>`).join('')}
+    ${lg.length?`<figure class="np-fig"><figcaption><b>Spread por legislación</b><span>TIR del Bonar menos la del Global del mismo año, en pb</span></figcaption>${tbl([['Vto.','l'],['Ley local'],['Ley NY'],['Spread']],lg.map(r=>`<tr><td class="l">${esc(r.anio)}</td><td class="mono">${esc(r.local)} ${nf(r.tirLocal,2)}%</td><td class="mono">${esc(r.ny)} ${nf(r.tirNy,2)}%</td><td class="mono"><b>${r.spread>0?'+':''}${nf(r.spread,0)} pb</b></td></tr>`))}</figure>`:''}</div>`;
+}
+
 function renderPre(p){
   const m=n=>p.macro.find(x=>x.nombre===n)||{};
   const es=m('Futuro S&P 500'),nq=m('Futuro Nasdaq 100'),vix=m('VIX (volatilidad)'),t10=m('Bono del Tesoro EE.UU. 10 años (%)');
@@ -696,7 +745,6 @@ function renderPost(p){
     bot?`Mayor aporte negativo: ${bot.ticker} (${pc(bot.var)}, ${sgnA(bot.aporte)}).`:'',
     `S&P 500 ${pc(r.spx&&r.spx.var)}, Nasdaq ${pc(r.ndx&&r.ndx.var)}; tasa a 10 años ${vnum(r.us10&&r.us10.valor,3)}%.`,
     `Riesgo país ${r.riesgo?nf(r.riesgo.valor,0)+' pb ('+fCorta(r.riesgo.fecha)+')':'sin dato'}${dRP!=null?' ('+(dRP>0?'+':'')+nf(dRP,0)+' pb)':''}; dólar MEP ${mep?'$ '+nf(mep.venta):'—'}.`,
-    ...(p.aforo||[]).filter(a=>a.pct>90).map(a=>`Aforo de la cuenta ${a.cuenta}: ${nf(a.pct,1)}%, por encima del rango de referencia (80%–90%).`)
   ].filter(Boolean);
   const mv=r.merval&&r.merval.var;
   const auto={titular:mv!=null?`El Merval ${mv>=0?'sube':'cae'} ${nf(Math.abs(mv),2)}% y la cartera ${t.varHoy>=0?'gana':'pierde'} ${pc(Math.abs(t.varPct)).replace('+','')} en la rueda`:`La cartera ${t.varHoy>=0?'gana':'pierde'} ${pc(Math.abs(t.varPct)).replace('+','')} en la rueda`,
@@ -710,11 +758,10 @@ function renderPost(p){
   ${sec(2,'Noticias del día',diario(p.noticias))}
   ${sec(3,'Lo que se dice en redes',enX(p.x))}
   ${sec(4,'ADRs argentinos y operaciones fuera de horario',`<div class="grid2"><div><div class="rsub">ADRs en Nueva York · var. % al cierre</div>${adrsChart('post-adr',p.adrs,'varCierre')||'<p class="note">Sin datos de ADRs.</p>'}</div><div><div class="rsub">After-hours (CEDEARs en cartera y ADRs)</div>${tbl([['Ticker','l'],['Cierre US$'],['Var. cierre'],['After-hours']],ah.map(a=>`<tr><td class="l"><span class="tk">${esc(a.ticker)}</span>${a.cartera?' <span class="hint">en cartera</span>':''}</td><td class="mono">${vnum(a.cierre)}</td><td class="mono ${vcls(a.varCierre)}">${pc(a.varCierre)}</td><td class="mono ${vcls(a.post)}"><b>${pc(a.post)}</b></td></tr>`))}</div></div>`)}
-  ${sec(5,'Renta fija',tbl([['Especie','l'],['Precio'],['Var. %'],['TIR'],['Duration'],['Paridad'],['Vencimiento','l'],['Tenencia']],(p.rentaFija||[]).map(x=>`<tr><td class="l"><span class="tk">${esc(x.ticker)}</span> <span class="hint">${esc(x.moneda)}</span></td><td class="mono">${vnum(x.precio)}</td><td class="mono ${vcls(x.var)}">${pc(x.var)}</td><td class="mono">${x.tir==null?'—':nf(x.tir,2)+'%'}</td><td class="mono">${vnum(x.dm)}</td><td class="mono">${x.paridad==null?'—':nf(x.paridad,1)+'%'}</td><td class="l">${esc(x.vto?fCorta(x.vto)+'/'+x.vto.slice(0,4):'')}</td><td class="mono">${fA(x.valor)}</td></tr>`)),'TIR, duration modificada y paridad según Rava Bursátil. Precios cada 100 nominales.')}
-  ${sec(6,'Aforo de caución tomadora',`<div class="grid2">${(p.aforo||[]).map(a=>{const col=a.pct>90?'var(--red)':a.pct>=80?'var(--green)':'var(--yellow)';return `<div class="card"><div class="ct">Cuenta ${esc(a.cuenta)}</div><div class="gauge"><div class="gpct ${a.pct>90?'neg':a.pct>=80?'pos':''}">${nf(a.pct,1)}%</div><div style="width:100%"><div class="gbar"><div class="gfill" style="width:${Math.min(a.pct||0,100)}%;background:${col}"></div></div><div class="glab"><span>0%</span><span>Rango de referencia 80%–90%</span><span>100%</span></div></div><div class="note">Caución ${fA(a.caucion)} sobre bonos y letras por ${fA(a.bonos)}</div></div></div>`}).join('')}</div>`)}
-  ${sec(7,'Mercados internacionales al cierre',`<div class="grid2"><div>${macroTabla(p.macro,['eeuu','riesgo'])}</div><div>${macroTabla(p.macro,['commodities','global'])}</div></div>`)}
-  ${sec(8,'Calendario económico'+(p.calendarioDia?' del '+esc(fechaLarga(p.calendarioDia).replace(/ de \d{4}$/,'')).toLowerCase():' del próximo día hábil'),calendarioTabla(p.calendario),'Horario de Argentina. Fuente: Forex Factory y eventos locales cargados en la pestaña Agenda.')}
-  ${sec(9,'Agenda próxima',agendaBloque(p.agenda,'Acreditación de cheques · próximos días hábiles'))}
+  ${sec(5,'Curvas de bonos',curvasBloque(p),'Datos de Rava Bursátil. TIR anual; TEM = tasa efectiva mensual equivalente. Curvas ajustadas por mínimos cuadrados sobre el logaritmo de la duration. Formato inspirado en el Semanal de El Dashboard.')}
+  ${sec(6,'Mercados internacionales al cierre',`<div class="grid2"><div>${macroTabla(p.macro,['eeuu','riesgo'])}</div><div>${macroTabla(p.macro,['commodities','global'])}</div></div>`)}
+  ${sec(7,'Calendario económico'+(p.calendarioDia?' del '+esc(fechaLarga(p.calendarioDia).replace(/ de \d{4}$/,'')).toLowerCase():' del próximo día hábil'),calendarioTabla(p.calendario),'Horario de Argentina. Fuente: Forex Factory y eventos locales cargados en la pestaña Agenda.')}
+  ${sec(8,'Agenda próxima',agendaBloque(p.agenda,'Acreditación de cheques · próximos días hábiles'))}
   ${repFoot(p,'Variaciones de BYMA contra el cierre anterior (plazo 24 horas). Las especies sin operaciones en el día se valúan al último precio informado por Nasini. El resultado por cuenta, el detalle por especie y las contribuciones del día están en Portfolio → Resumen. Las noticias se seleccionan automáticamente; los resúmenes son los que publica cada medio.')}</article>`;
 }
 

@@ -243,9 +243,25 @@ const RSS = [
   ['MarketWatch', 'https://feeds.content.dowjones.io/public/rss/mw_topstories', 'mundo'],
   ['Yahoo Finance', 'https://finance.yahoo.com/news/rssindex', 'mundo'],
 ];
-const PALABRAS = ['merval', 'riesgo país', 'riesgo pais', 'bonos', 'dólar', 'dolar', 'bcra', 'wall street', 'reserva federal', 'fed ', 'acciones',
-  'adr', 'inflación', 'licitación', 'tesoro', 'cedear', 'tasas', 'caución', 'mercados', 'byma', 'cnv', 'fmi', 'deuda',
-  'stocks', 'treasury', 'yields', 's&p', 'nasdaq', 'dow ', 'inflation', 'earnings', 'oil', 'dollar', 'rates', 'powell', 'tariff', 'jobs report', 'argentina'];
+// Filtro de noticias: solo pasan las que mencionan al menos un término de mercados, economía o negocios
+// (palabra completa) y ninguno de los temas excluidos.
+const PALABRAS = ['merval', 'riesgo país', 'riesgo pais', 'bono', 'bonos', 'dólar', 'dolar', 'bcra', 'banco central', 'wall street', 'reserva federal', 'fed',
+  'acciones', 'adr', 'adrs', 'inflación', 'licitación', 'tesoro', 'cedear', 'cedears', 'tasa', 'tasas', 'caución', 'mercado', 'mercados', 'byma', 'cnv', 'fmi',
+  'deuda', 'reservas', 'economía', 'económica', 'económico', 'empresa', 'empresas', 'inversión', 'inversiones', 'inversores', 'exportaciones', 'importaciones',
+  'balance', 'ganancias', 'facturación', 'petróleo', 'vaca muerta', 'soja', 'agro', 'impuestos', 'fiscal', 'superávit', 'déficit', 'ipc', 'indec', 'salarios',
+  'crédito', 'créditos', 'banco', 'bancos', 'bolsa', 'plazo fijo', 'lecap', 'bopreal', 'devaluación', 'brecha', 'cepo', 'ministerio de economía', 'caputo',
+  's&p', 'nasdaq', 'dow jones', 'stocks', 'stock', 'shares', 'treasury', 'treasuries', 'yields', 'bond', 'bonds', 'inflation', 'earnings', 'oil', 'dollar',
+  'rates', 'rate cut', 'powell', 'tariff', 'tariffs', 'jobs report', 'payrolls', 'economy', 'market', 'markets', 'investors', 'gdp', 'revenue', 'profit',
+  'ipo', 'bitcoin', 'crypto', 'merger', 'acquisition', 'deal', 'fusión', 'adquisición'];
+const EXCLUIDAS = ['fútbol', 'futbol', 'gimnasia', 'gimnasta', 'campeona', 'campeón', 'campeonato', 'mundial de fútbol', 'copa del mundo', 'selección argentina', 'messi', 'boca juniors', 'river plate',
+  'tenis', 'rugby', 'básquet', 'olímpico', 'olímpicos', 'olímpica', 'deporte', 'deportes', 'deportivo', 'horóscopo', 'receta', 'recetas', 'famoso', 'famosa', 'famosos',
+  'actriz', 'actor', 'cantante', 'espectáculo', 'farándula', 'telenovela', 'película', 'policial', 'asesinato', 'asesinó', 'crimen', 'femicidio',
+  'sports', 'nfl', 'nba', 'soccer', 'celebrity', 'movie', 'pronóstico del tiempo', 'tormenta', 'quiniela', 'lotería'];
+// ¿El texto contiene el término como palabra completa?
+function tiene_(texto, termino) {
+  const e = termino.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(^|[^a-z0-9áéíóúñü])' + e + '($|[^a-z0-9áéíóúñü])').test(texto);
+}
 // Cuentas de X que se siguen si no se configura la propiedad X_CUENTAS (ver README).
 const X_CUENTAS = ['FinanzasArgy', 'BCRAoficial', 'LuisCaputoAR', 'Ambitocom', 'cronistacom', 'infobae', 'WSJmarkets', 'federalreserve', 'DeItaone'];
 // Canales públicos de Telegram que se leen sin clave (vista web t.me/s/...). Se cambian con la propiedad TELEGRAM_CANALES.
@@ -323,7 +339,7 @@ function guardarHistorial_(ss, inf) {
   v.forEach(r => { if (r[2] && typeof r[13] === 'number') precios[r[2]] = r[13]; });
   const snap = { fecha: inf.fecha, precios, mep: cfg_(ss).getRange(CFG.mepUsado).getValue(),
     merval: inf.rueda && inf.rueda.merval, riesgo: inf.rueda && inf.rueda.riesgo, dolares: inf.rueda && inf.rueda.dolares,
-    spx: inf.rueda && inf.rueda.spx, cuentas: inf.cartera.cuentas.map(c => ({ cuenta: c.cuenta, cartera: c.cartera, capital: c.capital })) };
+    spx: inf.rueda && inf.rueda.spx, curvas: inf.curvas || null, cuentas: inf.cartera.cuentas.map(c => ({ cuenta: c.cuenta, cartera: c.cartera, capital: c.capital })) };
   const n = sh.getLastRow() - 1;
   const fechas = n > 0 ? sh.getRange(2, 1, n, 1).getValues().map(r => r[0]) : [];
   const i = fechas.indexOf(inf.fecha);
@@ -401,6 +417,45 @@ function ravaBonos_() {
     return o;
   } catch (e) { return {}; }
 }
+// Curvas de bonos al estilo de El Dashboard: cada familia con sus puntos (x = duration modificada o días al
+// vencimiento, y = TIR o TEM en %). Con datos de Rava; se guardan en el Historial para comparar con el cierre anterior.
+const FAMILIAS = [
+  // [clave, nombre, regex sobre la especie de Rava, eje x, medida]
+  ['bonares', 'Bonares', /^(AO|AN|AL|AE)\d\dD$/, 'dm', 'tir'],
+  ['globales', 'Globales', /^GD\d\dD$/, 'dm', 'tir'],
+  ['bopreales', 'Bopreales', /^BP[A-D]\dD$/, 'dm', 'tir'],   // cotización en USD (BPC7D = BPOC7)
+  ['lecap', 'LECAP', /^S\d\d[A-Z]\d$/, 'dm', 'tem'],
+  ['boncap', 'BONCAP', /^T\d\d[A-Z]\d$/, 'dm', 'tem'],
+  ['cer', 'CER (LECER y Boncer)', /^(TZX[A-Z0-9]{2,3}|X\d\d[A-Z]\d|TX\d\d)$/, 'dm', 'tem'],
+  ['dl', 'Dólar linked', /^(D\d\d[A-Z]\d|TZV[A-Z0-9]{2,3})$/, 'dias', 'tir'],
+];
+function curvas_(bonosRef) {
+  const out = {}, hoy = Date.parse(hoyK_() + 'T12:00:00-03:00');
+  FAMILIAS.forEach(([k, , re, ex, med]) => {
+    const pts = [];
+    Object.keys(bonosRef).forEach(esp => {
+      if (!re.test(esp)) return;
+      const b = bonosRef[esp], tir = b.tir;
+      if (!isFinite(tir) || Math.abs(tir) > 80) return;
+      const dias = b.vto ? Math.round((Date.parse(b.vto + 'T12:00:00-03:00') - hoy) / 86400000) : null;
+      const x = ex === 'dias' ? dias : b.dm;
+      if (!isFinite(x) || x <= 0) return;
+      const y = med === 'tem' ? (Math.pow(1 + tir / 100, 1 / 12) - 1) * 100 : tir;
+      const t = k === 'bopreales' ? 'BPO' + esp.slice(2, 4) : k === 'bonares' || k === 'globales' ? esp.slice(0, -1) : esp;   // AL30D → AL30
+      if (!pts.some(p => p.t === t)) pts.push({ t, x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 });
+    });
+    if (pts.length) out[k] = pts.sort((a, b) => a.x - b.x);
+  });
+  return out;
+}
+// Spread por legislación: TIR del Bonar (ley local) menos la del Global (ley NY) del mismo año.
+function legislacion_(c) {
+  const al = {}, gd = {};
+  (c.bonares || []).forEach(p => { const m = p.t.match(/^A[LE](\d\d)$/); if (m) al[m[1]] = p; });
+  (c.globales || []).forEach(p => { const m = p.t.match(/^GD(\d\d)$/); if (m) gd[m[1]] = p; });
+  return Object.keys(al).filter(k => gd[k]).sort().map(k => ({ anio: '20' + k, local: al[k].t, tirLocal: al[k].y, ny: gd[k].t, tirNy: gd[k].y, spread: Math.round((al[k].y - gd[k].y) * 100) }));
+}
+
 // Texto plano a partir del HTML/entidades que traen los RSS y X.
 function texto_(s) {
   return String(s || '').replace(/<!\[CDATA\[|\]\]>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
@@ -430,7 +485,7 @@ function noticias_(horas, max, claves) {
   const desde = Date.now() - horas * 3600000, vistos = new Set(), out = [];
   const fuentes = RSS.slice();
   if (claves.length) {
-    const q = '(' + claves.slice(0, 10).map(c => '"' + c + '"').join(' OR ') + ') when:' + Math.max(1, Math.ceil(horas / 24)) + 'd';
+    const q = '(' + claves.slice(0, 10).map(c => '"' + c + '"').join(' OR ') + ') (acciones OR mercado OR balance OR empresa OR inversión OR bolsa OR resultados) when:' + Math.max(1, Math.ceil(horas / 24)) + 'd';
     fuentes.push(['Google Noticias', 'https://news.google.com/rss/search?q=' + encodeURIComponent(q) + '&hl=es-419&gl=AR&ceid=AR:es-419', 'cartera']);
   }
   let resp = [];
@@ -445,10 +500,12 @@ function noticias_(horas, max, claves) {
         if (!titulo || !/^https:\/\//.test(x.link) || !(x.fecha >= desde)) return;
         const t = titulo.toLowerCase(), key = t.replace(/[^a-z0-9áéíóúñ]/g, '').slice(0, 60);
         if (vistos.has(key)) return;
-        let score = seccion === 'cartera' ? 3 : 0;
-        claves.forEach(c => { if (t.includes(c)) score += 3; });
-        PALABRAS.forEach(p => { if (t.includes(p)) score += 1; });
-        if (!score) return;
+        const todo = t + ' ' + x.resumen.toLowerCase();
+        if (EXCLUIDAS.some(p => tiene_(todo, p))) return;              // deportes, espectáculos, policiales, etc.
+        const fin = PALABRAS.filter(p => tiene_(todo, p)).length;
+        if (!fin) return;                                              // solo mercados, economía y negocios
+        let score = fin + (seccion === 'cartera' ? 2 : 0);
+        claves.forEach(c => { if (tiene_(t, c)) score += 3; });
         vistos.add(key);
         let resumen = x.resumen;
         if (resumen.toLowerCase().startsWith(t.slice(0, 40)) || resumen.length < 25) resumen = '';   // Google Noticias repite el título
@@ -653,15 +710,6 @@ function claves_(pos) {
   pos.forEach(p => { if (EMPRESAS[p.ticker]) c.add(EMPRESAS[p.ticker]); });
   return [...c];
 }
-function aforos_(ss, pos) {
-  const K = ss.getSheetByName('Cuentas').getRange(2, 1, 6, 11).getValues();
-  return ['11287', '11587'].map(cta => {
-    const k = K.find(r => String(r[0]) === cta); if (!k) return null;
-    const bonos = pos.filter(p => p.cuenta === cta && CLASES_BONO.includes(p.clase)).reduce((s, p) => s + p.valor, 0);
-    const cau = Number(k[4]) || 0;
-    return { cuenta: cta, caucion: cau, bonos, pct: bonos ? cau / bonos * 100 : null };
-  }).filter(Boolean);
-}
 function chequesEntre_(ss, d0, d1) {
   const k = d => Utilities.formatDate(d, TZ, 'yyyy-MM-dd');
   return chequesRaw_(ss).filter(c => c.acred && k(c.acred) >= d0 && k(c.acred) <= d1)
@@ -719,11 +767,7 @@ function armarPostmarket_(ss) {
   const contrib = conVar.map(e => ({ ticker: e.ticker, nombre: e.nombre, clase: e.clase, var: e.var, aporte: e.varHoy, valor: e.valor, cuentas: e.cuentas }));
   const suben = contrib.filter(x => x.aporte > 0).sort((a, b) => b.aporte - a.aporte).slice(0, 6);
   const bajan = contrib.filter(x => x.aporte < 0).sort((a, b) => a.aporte - b.aporte).slice(0, 6);
-  const rf = esp.filter(e => CLASES_BONO.includes(e.clase)).map(e => { const sym = e.moneda === 'USD' ? (RAVA_USD[e.ticker] || e.ticker + 'D') : e.ticker;
-    const b = bonosRef[sym] || bonosRef[e.ticker] || {};
-    return { ticker: e.ticker, nombre: e.nombre, moneda: e.moneda, precio: e.precio, var: e.var, tir: isFinite(b.tir) ? b.tir : null, dm: isFinite(b.dm) ? b.dm : null,
-      paridad: isFinite(b.paridad) ? b.paridad : null, vto: b.vto || '', valor: e.valor, cuentas: e.cuentas }; })
-    .sort((a, b) => b.valor - a.valor);
+  const curvas = curvas_(bonosRef);
   const after = [...new Set(ced.concat(ADRS))].filter(t => us[t] && typeof us[t].postmarket_change === 'number' && Math.abs(us[t].postmarket_change) >= 0.01)
     .map(t => ({ ticker: t, empresa: us[t].description, cierre: us[t].close, varCierre: us[t].change, post: us[t].postmarket_change, cartera: ced.includes(t) }))
     .sort((a, b) => Math.abs(b.post) - Math.abs(a.post)).slice(0, 10);
@@ -738,7 +782,8 @@ function armarPostmarket_(ss) {
       spx: { valor: m('S&P 500').valor, var: m('S&P 500').var }, ndx: { valor: m('Nasdaq Composite').valor, var: m('Nasdaq Composite').var },
       dji: { valor: m('Dow Jones').valor, var: m('Dow Jones').var }, vix: { valor: m('VIX (volatilidad)').valor, var: m('VIX (volatilidad)').var },
       us10: { valor: m('Bono del Tesoro EE.UU. 10 años (%)').valor, var: m('Bono del Tesoro EE.UU. 10 años (%)').var } },
-    macro: mac, cartera: car, suben, bajan, adrs, rentaFija: rf, aforo: aforos_(ss, pos), afterHours: after,
+    macro: mac, cartera: car, suben, bajan, adrs, afterHours: after,
+    curvas, curvasAnt: (prev && prev.curvas) || null, curvasAntFecha: prev && prev.curvas ? prev.fecha : null, legislacion: legislacion_(curvas),
     serie: serie_(hist, { fecha: hoyK_(), riesgo: rp ? rp.valor : null, merval: rava.merval ? rava.merval.valor : null, mep: mepHoy }),
     calendario: calendario_(ss, proximoHabil_(), proximoHabil_()), calendarioDia: proximoHabil_(),
     agenda: { cheques: chequesEntre_(ss, hoyK_(1), hoyK_(4)), balances: balances_(us, 7) },

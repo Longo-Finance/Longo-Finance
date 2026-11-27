@@ -30,7 +30,8 @@ implementación, así que el link no cambia.
 ## Informes premarket y postmarket (estilo diario)
 Cada informe arma una portada (titular, bajada, claves del día y mapa de mercados), las noticias del día con resumen e imagen
 (Ámbito, Infobae, El Cronista, La Nación, CNBC, MarketWatch, Yahoo Finance y Google Noticias para las empresas en cartera),
-gráficos de ADRs y de tendencia de riesgo país y dólar MEP, y los datos de mercado y de la cartera.
+gráficos de ADRs, de tendencia de riesgo país y dólar MEP y, en el postmarket, las curvas de bonos (hard dollar,
+Bopreales, tasa fija, CER y dólar linked, con el cierre anterior) y el spread por legislación, y los datos de mercado y de la cartera.
 
 Horarios (lunes a viernes, hora Argentina): el **premarket** se regenera cada 30 minutos entre las 8:00 y las 11:30 y el
 **postmarket** cada 30 minutos entre las 18:00 y las 20:00. Fuera de esas franjas queda la última edición hasta el día siguiente
