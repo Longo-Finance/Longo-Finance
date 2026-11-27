@@ -92,41 +92,51 @@ function enHorario_() {
 }
 
 // ================================================================ Invertir Online (fuente principal de cotizaciones)
-// API oficial de IOL con el usuario del dueño (credenciales en Propiedades del script, cargadas desde el menú).
-// Cotización plazo 24 hs (t1) de cada especie en BYMA: precio real del CEDEAR, bono, letra, ON o acción.
-// Si IOL no está configurado o no responde, se usa Rava como respaldo.
-const IOL_API = 'https://api.invertironline.com';
-const IOL_PLAZO = 't1';
+// API oficial de IOL Inversiones (https://api.iolinversiones.com, documentación en el mismo dominio) con el usuario
+// del dueño: credenciales en Propiedades del script, cargadas desde el menú. Cotización plazo T1 de cada especie en
+// BYMA: precio real del CEDEAR, bono, letra, ON o acción. Si IOL no está configurado o no responde, se usa Rava.
+const IOL_API = 'https://api.iolinversiones.com';
+const IOL_PLAZO = 'T1';
 
 function iolConfigurado_() { const P = PropertiesService.getScriptProperties(); return !!(P.getProperty('IOL_USUARIO') && P.getProperty('IOL_CLAVE')); }
+function iolError_(r) { try { const j = JSON.parse(r.getContentText()); return (j.error && j.error.message) || ('HTTP ' + r.getResponseCode()); } catch (e) { return 'HTTP ' + r.getResponseCode(); } }
+function iolPedirToken_(cuerpo) {
+  return UrlFetchApp.fetch(IOL_API + '/auth/token', { method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify(cuerpo) });
+}
 function iolToken_(renovar) {
   const cache = CacheService.getScriptCache();
   if (!renovar) { const t = cache.get('iol_token'); if (t) return t; }
-  const P = PropertiesService.getScriptProperties();
-  const r = UrlFetchApp.fetch(IOL_API + '/token', { method: 'post', muteHttpExceptions: true,
-    payload: { username: P.getProperty('IOL_USUARIO'), password: P.getProperty('IOL_CLAVE'), grant_type: 'password' } });
-  if (r.getResponseCode() !== 200) throw new Error('Invertir Online rechazó el ingreso (HTTP ' + r.getResponseCode() + '). Revise usuario, clave y que la API esté habilitada en su cuenta.');
-  const j = JSON.parse(r.getContentText());
-  if (!j.access_token) throw new Error('Invertir Online no devolvió un token de acceso.');
-  cache.put('iol_token', j.access_token, Math.max(60, Math.min(Number(j.expires_in) || 900, 900) - 60));
-  return j.access_token;
+  let r = null;
+  const ref = cache.get('iol_refresh');
+  if (ref) { r = iolPedirToken_({ grant_type: 'refresh_token', refresh_token: ref }); if (r.getResponseCode() !== 200) r = null; }
+  if (!r) {
+    const P = PropertiesService.getScriptProperties();
+    r = iolPedirToken_({ grant_type: 'password', username: P.getProperty('IOL_USUARIO'), password: P.getProperty('IOL_CLAVE') });
+  }
+  if (r.getResponseCode() !== 200) throw new Error('Invertir Online rechazó el ingreso (' + iolError_(r) + '). Revise usuario y contraseña.');
+  const d = (JSON.parse(r.getContentText()).data) || {};
+  if (!d.access_token) throw new Error('Invertir Online no devolvió un token de acceso.');
+  cache.put('iol_token', d.access_token, Math.max(60, Math.min(Number(d.expires_in) || 900, 21600) - 60));
+  if (d.refresh_token && String(d.refresh_token).length < 90000) cache.put('iol_refresh', d.refresh_token, 21600);
+  return d.access_token;
 }
-// Devuelve { SIMBOLO: { ult, ant, hora, plazo } } para los símbolos pedidos.
+// Devuelve { SIMBOLO: { ult, ant, hora, plazo } } para los símbolos pedidos (BYMA, plazo T1).
 function iolCotizaciones_(simbolos) {
   const syms = [...new Set(simbolos)].filter(Boolean);
   const pedir = token => UrlFetchApp.fetchAll(syms.map(sym => ({
-    url: IOL_API + '/api/v2/bCBA/Titulos/' + encodeURIComponent(sym) + '/Cotizacion?model.simbolo=' + encodeURIComponent(sym) + '&model.mercado=bCBA&model.plazo=' + IOL_PLAZO,
-    headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true })));
+    url: IOL_API + '/broker/market-data/' + encodeURIComponent(sym) + '/quote?market=BCBA&term=' + IOL_PLAZO,
+    headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' }, muteHttpExceptions: true })));
   let res = pedir(iolToken_(false));
   if (res.some(r => r.getResponseCode() === 401)) res = pedir(iolToken_(true));   // token vencido
   const out = {};
   res.forEach((r, i) => {
     if (r.getResponseCode() !== 200) return;
     try {
-      const q = JSON.parse(r.getContentText());
-      const ult = Number(q.ultimoPrecio) || 0, ant = Number(q.cierreAnterior) || 0;
-      if (ult > 0) out[syms[i]] = { ult, ant: ant > 0 ? ant : (q.variacion != null && Number(q.variacion) > -100 ? ult / (1 + Number(q.variacion) / 100) : 0),
-        hora: q.fechaHora ? Utilities.formatDate(new Date(q.fechaHora), TZ, 'HH:mm:ss') : '', plazo: IOL_PLAZO };
+      const q = JSON.parse(r.getContentText()).data || {}, pr = q.prices || {};
+      const ult = Number(pr.current) || 0;
+      let ant = Number(pr.previous_close) || 0;
+      if (!(ant > 0) && q.change && Number(q.change.percent) > -100) ant = ult / (1 + Number(q.change.percent) / 100);
+      if (ult > 0) out[syms[i]] = { ult, ant, hora: q.last_updated ? Utilities.formatDate(new Date(q.last_updated), TZ, 'HH:mm:ss') : '', plazo: IOL_PLAZO };
     } catch (e) { /* especie sin datos */ }
   });
   return out;
@@ -140,7 +150,7 @@ function configurarIOL() {
   if (c.getSelectedButton() !== ui.Button.OK || !c.getResponseText()) return;
   const P = PropertiesService.getScriptProperties();
   P.setProperties({ IOL_USUARIO: u.getResponseText().trim(), IOL_CLAVE: c.getResponseText() });
-  CacheService.getScriptCache().remove('iol_token');
+  CacheService.getScriptCache().removeAll(['iol_token', 'iol_refresh']);
   try {
     const q = iolCotizaciones_(['GGAL', 'AL30', 'AL30D']);
     const ok = Object.keys(q);
